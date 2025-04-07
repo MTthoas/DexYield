@@ -40,3 +40,27 @@ agave-install update
 ### Install Anchor CLI
 
 https://www.anchor-lang.com/docs/installation#install-anchor-cli
+
+### Solana CLI
+
+https://www.anchor-lang.com/docs/installation#solana-cli-basics
+
+#### Solana config
+
+https://www.anchor-lang.com/docs/installation#solana-config
+
+#### Create wallet
+
+https://www.anchor-lang.com/docs/installation#create-wallet
+
+#### Airdrop SOL
+
+https://www.anchor-lang.com/docs/installation#airdrop-sol
+
+#### Run local validator
+
+https://www.anchor-lang.com/docs/installation#run-local-validator
+
+### Anchor
+
+https://www.anchor-lang.com/docs/installation#anchor-cli-basics
