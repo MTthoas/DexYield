@@ -1,7 +1,3 @@
-test-ledger
-.env
-
-## contract
 .anchor
 .DS_Store
 target
