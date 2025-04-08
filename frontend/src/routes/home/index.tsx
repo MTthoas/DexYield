@@ -10,53 +10,6 @@ export const Route = createFileRoute("/home/")({
 function App() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2 ml-4">
-            <Wallet className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold">YieldFi</span>
-          </div>
-          <nav className="hidden md:flex gap-6">
-            <Link to={"/home"} className="text-sm font-medium transition-colors hover:text-primary">
-              Link
-            </Link>
-            <Link to={"/"} className="text-sm font-medium transition-colors hover:text-primary">
-              Link
-            </Link>
-            <Link to={"/home"} className="text-sm font-medium transition-colors hover:text-primary">
-              Link
-            </Link>
-            <Link to={"/"} className="text-sm font-medium transition-colors hover:text-primary">
-              Link
-            </Link>
-          </nav>
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" className="hidden md:flex">
-              Connect Wallet
-            </Button>
-            <Button size="sm">Launch App</Button>
-            <Button variant="ghost" size="icon" className="md:hidden">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-6 w-6"
-              >
-                <line x1="4" x2="20" y1="12" y2="12" />
-                <line x1="4" x2="20" y1="6" y2="6" />
-                <line x1="4" x2="20" y1="18" y2="18" />
-              </svg>
-              <span className="sr-only">Toggle menu</span>
-            </Button>
-          </div>
-        </div>
-      </header>
       <main className="flex-1">
         <section className="w-full py-12 md:py-24 lg:py-32 xl:py-48">
           <div className="container px-4 md:px-6">
@@ -392,7 +345,11 @@ function App() {
             &copy; {new Date().getFullYear()} YieldFi. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
-            <Link to="https://github.com/MTthoas/DexYield" className="text-muted-foreground hover:text-foreground">
+            <Link to="https://github.com/MTthoas/DexYield" 
+                  className="text-muted-foreground hover:text-foreground"
+                  target="_blank"
+                  rel="noopener noreferrer"
+            >  
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="24"
