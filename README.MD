@@ -23,7 +23,6 @@ graph TD
   B --> B4[Dockerfile]
 
   %% Contracts (Anchor / Solana)
-  C --> C1[.anchor]
   C --> C2[app]
   C --> C3[migrations]
   C --> C4[programs]
