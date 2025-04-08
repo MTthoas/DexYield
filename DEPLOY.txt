@@ -1,0 +1,38 @@
+    Finished `release` profile [optimized] target(s) in 1.03s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+     Running unittests src/lib.rs (/Users/matthias/projects/DexYield/contracts/target/debug/deps/contract-d61d0751fc1ceef2)
+Deploying cluster: https://api.devnet.solana.com
+Upgrade authority: /Users/matthias/.config/solana/id.json
+Deploying program "contract"...
+Program path: /Users/matthias/projects/DexYield/contracts/target/deploy/contract.so...
+Program Id: 4WC4MDgPpPW3PY4idJT5ffX1NJpkYhLfRv2sDUsGCWLa
+
+Signature: qWaMYfxFb6g2bsrogeVweFdKQv8ULjwxuXAzkfnGaGPHBP2TfvaYAn6KhZT5fgrpfTfmfEcvst5d56owEhuEWwm
+
+Deploy success
+
+yarn run v1.22.22
+$ /Users/matthias/projects/DexYield/contracts/node_modules/.bin/ts-mocha -p ./tsconfig.json -t 1000000 'tests/**/*.ts'
+(node:72147) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:72147) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/matthias/projects/DexYield/contracts/tests/counter.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/matthias/projects/DexYield/contracts/package.json.
+
+  counter
+Transaction Signature: 6LNzeFcdpyCDxN9TFmNEnbjQ7yZ9y8agAsNvddxyXVGQhfXZ6VhnwZwSwm1aVFtGFQi58EGnSUFnEXC4THmbwiG
+Count: 0
+    ✔ Is initialized! (2972ms)
+Transaction Signature: 2oQfWnpHdRZzq1oKpGGWqQRVC26UfFkPsLVVNNMF35SgcfSqc3ear4kN7kusKkEsxkb98aHHCCfWmrcHYjMRNpcw
+Count: 1
+    ✔ Increment (7484ms)
+Transaction Signature: 2KvCkS6ZGY6xVLXUi9LUaf7duRcgGJWRd9pDMd41y9aNS1B7PFpyzfrXH1ZWNyrcvXzbpVvKAt3E8bKRmDiMkuvT
+Count: 0
+    ✔ Decrement (2746ms)
+Transaction Signature: 3VMomfoQxX5TZCBdxS258WVG5Z2atyxvLrYEhAd1NVvibWa8qEdSDFMGu42FmyBvmyGcpACyXbqWFUaaMQaynR4B
+Count: 0
+    ✔ Reset (3159ms)
+
+  4 passing (16s)
+
+✨  Done in 18.87s.
