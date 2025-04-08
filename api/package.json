@@ -1,0 +1,44 @@
+{
+  "name": "api-yield",
+  "description": "Api Yield with Express, Kysely, Prisma, and PostgreSQL",
+  "version": "1.2.0",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "esbuild": "^0.25.1",
+    "esbuild-register": "^3.6.0",
+    "nodemon": "^3.1.9",
+    "pino-pretty": "^13.0.0",
+    "prisma": "^6.5.0",
+    "prisma-kysely": "^1.8.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "kysely": "^0.27.6",
+    "pg": "^8.14.1",
+    "pino": "^9.6.0",
+    "zod": "^3.23.8"
+  },
+  "scripts": {
+    "start": "node --enable-source-maps dist/index.js",
+    "dev": "nodemon --exec \"node -r esbuild-register --trace-warnings src/index.ts\" -e .ts | npx pino-pretty",
+    "prebuild": "tsc --noEmit",
+    "build": "tsc",
+    "start:prod": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy"
+  }
+}
