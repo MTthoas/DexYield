@@ -7,6 +7,7 @@ skip-lint = false
 
 [programs.localnet]
 contract = "4WC4MDgPpPW3PY4idJT5ffX1NJpkYhLfRv2sDUsGCWLa"
+lending = "2g7jcHp3Kxybhtp2rkAVhqRn5YscGyJP3FGUMZ5G8vVE"
 
 [programs.devnet]
 contract = "4WC4MDgPpPW3PY4idJT5ffX1NJpkYhLfRv2sDUsGCWLa"
@@ -15,7 +16,7 @@ contract = "4WC4MDgPpPW3PY4idJT5ffX1NJpkYhLfRv2sDUsGCWLa"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
