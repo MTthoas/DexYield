@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
 
+pub mod error;
+use error::ErrorCode;
+
 declare_id!("frB7oL8YJrNL9uo2oPjQHfFcuNiuGboGvyVMNhTS6uM");
 
 #[program]
@@ -182,10 +185,4 @@ pub struct UserDeposit {
 
 impl UserDeposit {
     pub const INIT_SPACE: usize = 8 + 32 + 32 + 8; // 8 bytes for account header, 32 bytes for user, 32 bytes for pool, and 8 bytes for amount
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Insufficient funds in the user's deposit.")]
-    InsufficientFunds,
 }
