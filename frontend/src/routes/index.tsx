@@ -1,42 +1,30 @@
-import { createFileRoute } from "@tanstack/react-router";
-import logo from "../logo.svg";
+// src/routes/index.tsx
+import React, { createContext, useEffect } from "react";
+import { useLocation, useNavigate, createFileRoute } from "@tanstack/react-router";
 
-import { Button } from "@/components/ui/button";
+// Création d'un contexte global (modifiable selon tes besoins)
+export const AppContext = createContext({});
+
+// Provider qui enveloppe l'application
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  return <AppContext.Provider value={{}}>{children}</AppContext.Provider>;
+};
+
+// Composant principal qui enveloppe l'application et effectue la redirection
+function App({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Si l'URL est exactement "/", redirige vers /explore/home
+    if (location.pathname === "/") {
+      navigate({ to: "/explore/home", replace: true });
+    }
+  }, [location, navigate]);
+
+  return <AppProvider>{children}</AppProvider>;
+}
 
 export const Route = createFileRoute("/")({
   component: App,
 });
-
-function App() {
-  return (
-    <div className="text-center">
-      <header className="min-h-screen flex flex-col items-center justify-center bg-[#282c34] text-white text-[calc(10px+2vmin)]">
-        <img
-          src={logo}
-          className="h-[40vmin] pointer-events-none animate-[spin_20s_linear_infinite]"
-          alt="logo"
-        />
-        <p>
-          Edit <code>src/routes/index.tsx</code> and save to reload.
-        </p>
-        <a
-          className="text-[#61dafb] hover:underline"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-        <a
-          className="text-[#61dafb] hover:underline"
-          href="https://tanstack.com"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn TanStack
-        </a>
-        <Button>Click me</Button>
-      </header>
-    </div>
-  );
-}

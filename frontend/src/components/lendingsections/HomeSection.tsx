@@ -11,7 +11,7 @@ export function HomeSection() {
             alt="YieldFi"
             className="mx-auto rounded-full object-cover w-[350px] h-[350px] sm:w-[400px] sm:h-[400px] lg:w-[450px] lg:h-[450px] ml-60"
           />
-          <div className="absolute top-1/2 left-1/2 transform -translate-y-1/2 -translate-x-[280px]">
+          <div className="absolute top-1/2 left-1/2 transform -translate-y-1/2 -translate-x-[275px]">
             <h1 className="text-center text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl lg:text-6xl">
               <span className="text-white">Unlock the P</span>
               <span className="text-black">ower of DeFi </span>

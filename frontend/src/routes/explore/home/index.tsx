@@ -6,7 +6,7 @@ import { ActionSection } from "@/components/lendingsections/ActionSection";
 
 import { createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/home/")({
+export const Route = createFileRoute("/explore/home/")({
   component: HomePage,
 });
 

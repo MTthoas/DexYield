@@ -12,7 +12,7 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as IndexImport } from './routes/index'
-import { Route as HomeIndexImport } from './routes/home/index'
+import { Route as ExploreHomeIndexImport } from './routes/explore/home/index'
 
 // Create/Update Routes
 
@@ -22,9 +22,9 @@ const IndexRoute = IndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const HomeIndexRoute = HomeIndexImport.update({
-  id: '/home/',
-  path: '/home/',
+const ExploreHomeIndexRoute = ExploreHomeIndexImport.update({
+  id: '/explore/home/',
+  path: '/explore/home/',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -39,11 +39,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
-    '/home/': {
-      id: '/home/'
-      path: '/home'
-      fullPath: '/home'
-      preLoaderRoute: typeof HomeIndexImport
+    '/explore/home/': {
+      id: '/explore/home/'
+      path: '/explore/home'
+      fullPath: '/explore/home'
+      preLoaderRoute: typeof ExploreHomeIndexImport
       parentRoute: typeof rootRoute
     }
   }
@@ -53,37 +53,37 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/home': typeof HomeIndexRoute
+  '/explore/home': typeof ExploreHomeIndexRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/home': typeof HomeIndexRoute
+  '/explore/home': typeof ExploreHomeIndexRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
-  '/home/': typeof HomeIndexRoute
+  '/explore/home/': typeof ExploreHomeIndexRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/home'
+  fullPaths: '/' | '/explore/home'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/home'
-  id: '__root__' | '/' | '/home/'
+  to: '/' | '/explore/home'
+  id: '__root__' | '/' | '/explore/home/'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  HomeIndexRoute: typeof HomeIndexRoute
+  ExploreHomeIndexRoute: typeof ExploreHomeIndexRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  HomeIndexRoute: HomeIndexRoute,
+  ExploreHomeIndexRoute: ExploreHomeIndexRoute,
 }
 
 export const routeTree = rootRoute
@@ -97,14 +97,14 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/home/"
+        "/explore/home/"
       ]
     },
     "/": {
       "filePath": "index.tsx"
     },
-    "/home/": {
-      "filePath": "home/index.tsx"
+    "/explore/home/": {
+      "filePath": "explore/home/index.tsx"
     }
   }
 }
