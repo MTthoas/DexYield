@@ -93,4 +93,60 @@ describe("lending", () => {
       userDeposit.amount.toString()
     );
   });
+
+  it("Mint Yield Token", async () => {
+    const ytMint = anchor.web3.Keypair.generate();
+    const userTokenAccount = anchor.web3.Keypair.generate();
+
+    // Ce test suppose que les comptes de mint et token_account ont déjà été créés via CPI ou setup.
+    const tx = await program.methods
+      .mintYieldToken(new anchor.BN(50))
+      .accounts({
+        pool: lendingPoolPDA,
+        ytMint: ytMint.publicKey,
+        mintAuthority: lendingPoolPDA, // si PDA, remplacer par derive
+        userTokenAccount: userTokenAccount.publicKey,
+        user: provider.wallet.publicKey,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+      })
+      .signers([])
+      .rpc();
+
+    console.log("✅ YT minté, tx:", tx);
+  });
+
+  it("Get User Balance", async () => {
+    const balance = await program.methods
+      .getUserBalance()
+      .accounts({
+        user: provider.wallet.publicKey,
+        pool: lendingPoolPDA,
+        userDeposit: userDepositPDA,
+      })
+      .view();
+    console.log("🔍 Solde user récupéré via getUserBalance():", balance.toString());
+  });
+
+  it("Redeem (mocké)", async () => {
+    try {
+      const tx = await program.methods
+        .redeem()
+        .accounts({
+          user: provider.wallet.publicKey,
+          pool: lendingPoolPDA,
+          userDeposit: userDepositPDA,
+          ytMint: anchor.web3.Keypair.generate().publicKey,
+          userTokenAccount: anchor.web3.Keypair.generate().publicKey,
+          userUsdcAccount: anchor.web3.Keypair.generate().publicKey,
+          vaultAccount: anchor.web3.Keypair.generate().publicKey,
+          poolAuthority: lendingPoolPDA,
+          tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+        })
+        .signers([])
+        .rpc();
+      console.log("✅ Redeem effectué (attention: doit respecter la durée de maturité), tx:", tx);
+    } catch (err) {
+      console.log("❌ Redeem a échoué (peut-être trop tôt) :", err.message);
+    }
+  });
 });
