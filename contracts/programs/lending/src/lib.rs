@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 pub mod error;
 use error::ErrorCode;
 
-declare_id!("frB7oL8YJrNL9uo2oPjQHfFcuNiuGboGvyVMNhTS6uM");
+declare_id!("BZUEgp9psZegJarKqAH5WC6HSYCQ4fY2XphuCd5RsyeF");
 
 #[program]
 pub mod lending {
