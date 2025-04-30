@@ -1,7 +1,13 @@
+[patch.crates-io]
+proc-macro2 = "=1.0.79"
+quote = "=1.0.26"
+syn = "=1.0.109"
+
 [toolchain]
 package_manager = "yarn"
 
 [features]
+idl-build = ["anchor-spl/idl-build"]
 resolution = true
 skip-lint = false
 
