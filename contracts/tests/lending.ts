@@ -34,7 +34,7 @@ describe("lending", () => {
 
   // PDA for mint authority
   const [mintAuthority] = PublicKey.findProgramAddressSync(
-    [Buffer.from("mint_authority"), lendingPoolPDA.toBuffer()],
+    [Buffer.from("authority"), lendingPoolPDA.toBuffer()],
     program.programId
   );
 
