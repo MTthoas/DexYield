@@ -69,10 +69,11 @@ pub mod lending {
         };
 
         // Génère les seeds pour la PDA d'autorité du mint
+        let pool_key = ctx.accounts.pool.key();
         let seeds = &[
             b"authority",
-            ctx.accounts.pool.key().as_ref(),
-            &[ctx.bumps.get("mint_authority").unwrap().clone()],
+            pool_key.as_ref(),
+            &[ctx.bumps.mint_authority],
         ];
         let signer = &[&seeds[..]];
 
@@ -115,6 +116,13 @@ pub mod lending {
         let yield_amount = amount + amount * YIELD_RATE / 100;
 
         // Transfert du vault vers l'utilisateur
+        let pool_key = ctx.accounts.pool.key();
+        let authority_seeds = &[
+            b"authority",
+            pool_key.as_ref(),
+            &[ctx.bumps.pool_authority],
+        ];
+            
         let transfer_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -123,13 +131,8 @@ pub mod lending {
                 authority: ctx.accounts.pool_authority.to_account_info(),
             },
         );
-
-        let authority_seeds = &[
-            b"authority",
-            ctx.accounts.pool.key().as_ref(),
-            &[ctx.bumps.get("pool_authority").unwrap().clone()],
-        ];
-        transfer_ctx.with_signer(&[authority_seeds]);
+        let signer_seeds = [&authority_seeds[..]];
+        let transfer_ctx = transfer_ctx.with_signer(&signer_seeds);
         transfer(transfer_ctx, yield_amount)?;
 
         user_deposit.amount = 0;
