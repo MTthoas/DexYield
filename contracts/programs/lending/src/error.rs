@@ -10,5 +10,7 @@ pub enum ErrorCode {
     CalculationError,
     #[msg("APY invalide.")]
     InvalidAPY,
+    #[msg("Stratégie du dépôt invalide.")]
+    InvalidStrategy,
 }
 

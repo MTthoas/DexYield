@@ -16,15 +16,32 @@ describe("lending", () => {
     program.programId
   );
 
-  // Dérive le PDA du compte UserDeposit
-  const [userDepositPDA] = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("user_deposit"),
-      provider.wallet.publicKey.toBuffer(),
-      lendingPoolPDA.toBuffer(),
-    ],
-    program.programId
-  );
+  // Dérive le PDA de la stratégie (exemple : une stratégie par mint USDC)
+  let strategyMint: PublicKey;
+  let strategyPDA: PublicKey;
+
+  before(async () => {
+    // Crée un mint pour la stratégie (ex : USDC)
+    strategyMint = await createMint(
+      provider.connection,
+      provider.wallet.payer,
+      provider.wallet.publicKey,
+      null,
+      6
+    );
+    // Dérive le PDA de la stratégie
+    [strategyPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("strategy"), strategyMint.toBuffer()],
+      program.programId
+    );
+  });
+
+  // Dérive le PDA du compte UserDeposit avec la stratégie
+  const getUserDepositPDA = (user: PublicKey, pool: PublicKey, strategy: PublicKey) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("user_deposit"), user.toBuffer(), pool.toBuffer(), strategy.toBuffer()],
+      program.programId
+    )[0];
 
   // PDA for vault authority (if needed)
   const [vaultAuthority] = PublicKey.findProgramAddressSync(
@@ -82,7 +99,26 @@ describe("lending", () => {
     }
   });
 
+  it("Initialize Strategy", async () => {
+    try {
+      await program.account.strategy.fetch(strategyPDA);
+      console.log("✅ Strategy déjà existante");
+    } catch {
+      const tx = await program.methods
+        .createStrategy(new anchor.BN(10000)) // 10% APY
+        .accounts({
+          admin: provider.wallet.publicKey,
+          strategy: strategyPDA,
+          tokenAddress: strategyMint,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+      console.log("✅ Strategy créée, tx:", tx);
+    }
+  });
+
   it("Initialize User Deposit", async () => {
+    const userDepositPDA = getUserDepositPDA(provider.wallet.publicKey, lendingPoolPDA, strategyPDA);
     try {
       await program.account.userDeposit.fetch(userDepositPDA);
       console.log("✅ UserDeposit déjà existant");
@@ -93,6 +129,7 @@ describe("lending", () => {
           user: provider.wallet.publicKey,
           pool: lendingPoolPDA,
           userDeposit: userDepositPDA,
+          strategy: strategyPDA,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
@@ -101,12 +138,14 @@ describe("lending", () => {
   });
 
   it("Deposit", async () => {
+    const userDepositPDA = getUserDepositPDA(provider.wallet.publicKey, lendingPoolPDA, strategyPDA);
     const tx = await program.methods
       .deposit(new anchor.BN(100))
       .accounts({
         user: provider.wallet.publicKey,
         pool: lendingPoolPDA,
         userDeposit: userDepositPDA,
+        strategy: strategyPDA,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
       .rpc();
@@ -117,12 +156,14 @@ describe("lending", () => {
   });
 
   it("Withdraw", async () => {
+    const userDepositPDA = getUserDepositPDA(provider.wallet.publicKey, lendingPoolPDA, strategyPDA);
     const tx = await program.methods
       .withdraw(new anchor.BN(50))
       .accounts({
         user: provider.wallet.publicKey,
         pool: lendingPoolPDA,
         userDeposit: userDepositPDA,
+        strategy: strategyPDA,
       })
       .rpc();
     console.log("✅ Retrait effectué, tx:", tx);
@@ -161,6 +202,7 @@ describe("lending", () => {
         userTokenAccount: userTokenAccount.address,
         user: provider.wallet.publicKey,
         tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+        // Ajoute la stratégie si nécessaire dans le contexte
       })
       .signers([])
       .rpc();
@@ -169,18 +211,21 @@ describe("lending", () => {
   });
 
   it("Get User Balance", async () => {
+    const userDepositPDA = getUserDepositPDA(provider.wallet.publicKey, lendingPoolPDA, strategyPDA);
     const balance = await program.methods
       .getUserBalance()
       .accounts({
         user: provider.wallet.publicKey,
         pool: lendingPoolPDA,
         userDeposit: userDepositPDA,
+        strategy: strategyPDA,
       })
       .view();
     console.log("🔍 Solde user récupéré via getUserBalance():", balance.toString());
   });
 
   it("Redeem (mocké)", async () => {
+    const userDepositPDA = getUserDepositPDA(provider.wallet.publicKey, lendingPoolPDA, strategyPDA);
     try {
       // Crée un mint pour le Yield Token
       const ytMint = await createMint(
@@ -212,6 +257,7 @@ describe("lending", () => {
           user: provider.wallet.publicKey,
           pool: lendingPoolPDA,
           userDeposit: userDepositPDA,
+          strategy: strategyPDA,
           ytMint: ytMint,
           userTokenAccount: userTokenAccount.address,
           userUsdcAccount: userUsdcAccount.address,

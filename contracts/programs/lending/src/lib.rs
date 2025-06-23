@@ -26,17 +26,24 @@ pub mod lending {
         let user_deposit = &mut ctx.accounts.user_deposit;
         user_deposit.user = *ctx.accounts.user.key;
         user_deposit.pool = ctx.accounts.pool.key();
+        user_deposit.strategy = ctx.accounts.strategy.key();
         user_deposit.amount = 0;
+        user_deposit.deposit_time = Clock::get()?.unix_timestamp;
         Ok(())
     }
 
     pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
         let user_deposit = &mut ctx.accounts.user_deposit;
+        let strategy = &ctx.accounts.strategy;
+
+        // Vérifie que la stratégie du compte correspond à celle passée
+        require_keys_eq!(user_deposit.strategy, strategy.key(), ErrorCode::InvalidStrategy);
 
         pool.total_deposits += amount;
         user_deposit.amount += amount;
-
+        // Met à jour le timestamp à chaque dépôt
+        user_deposit.deposit_time = Clock::get()?.unix_timestamp;
         Ok(())
     }
 
@@ -97,6 +104,9 @@ pub mod lending {
         let user_deposit = &mut ctx.accounts.user_deposit;
         let current_time = Clock::get()?.unix_timestamp;
         let min_duration: i64 = 60 * 60 * 24 * 7; // 7 jours
+
+        // Vérifie que la stratégie passée correspond à celle du dépôt
+        require_keys_eq!(user_deposit.strategy, ctx.accounts.strategy.key(), ErrorCode::InvalidStrategy);
 
         if current_time - user_deposit.deposit_time < min_duration {
             return Err(ErrorCode::TooEarlyToRedeem.into());
@@ -200,10 +210,16 @@ pub struct InitializeUserDeposit<'info> {
         init,
         payer = user,
         space = UserDeposit::INIT_SPACE,
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
         bump
     )]
     pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"strategy", strategy.key().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
 
     pub system_program: Program<'info, System>,
 }
@@ -222,10 +238,16 @@ pub struct Deposit<'info> {
 
     #[account(
         mut,
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
         bump
     )]
     pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"strategy", strategy.key().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
 }
 
 #[derive(Accounts)]
@@ -242,10 +264,16 @@ pub struct Withdraw<'info> {
 
     #[account(
         mut,
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
         bump
     )]
     pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"strategy", strategy.key().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
 }
 
 #[derive(Accounts)]
@@ -259,10 +287,16 @@ pub struct GetUserBalance<'info> {
     pub pool: Account<'info, Pool>,
 
     #[account(
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
         bump
     )]
     pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"strategy", strategy.key().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
 }
 
 #[derive(Accounts)]
@@ -289,12 +323,13 @@ impl Pool {
 pub struct UserDeposit {
     pub user: Pubkey,
     pub pool: Pubkey,
+    pub strategy: Pubkey, // Ajout du lien explicite à la stratégie
     pub amount: u64,
     pub deposit_time: i64,
 }
 
 impl UserDeposit {
-    pub const INIT_SPACE: usize = 8 + 32 + 32 + 8 + 8; // 8 bytes for account header, 32 bytes for user, 32 bytes for pool, 8 bytes for amount, 8 bytes for deposit_time
+    pub const INIT_SPACE: usize = 8 + 32 + 32 + 32 + 8 + 8; // Ajout 32 pour strategy
 }
 
 // Nouvelle struct de stratégie
@@ -373,13 +408,13 @@ pub struct Redeem<'info> {
 
     #[account(
         mut,
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
         bump
     )]
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", yt_mint.key().as_ref()],
+        seeds = [b"strategy", strategy.key().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,

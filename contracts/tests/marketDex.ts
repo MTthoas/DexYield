@@ -27,6 +27,10 @@ describe("marketplace", () => {
   let ytTokenAccount: any;
   let sellerTokenAccount: any;
 
+  // Ajout : dérive une stratégie pour le test (exemple : une stratégie par mint YT)
+  let strategyMint: anchor.web3.PublicKey;
+  let strategyPDA: anchor.web3.PublicKey;
+
   before(async () => {
     // Airdrop SOL to seller to pay for transactions
     await provider.connection.requestAirdrop(seller, 2 * anchor.web3.LAMPORTS_PER_SOL);
@@ -83,6 +87,13 @@ describe("marketplace", () => {
       ytTokenMint,
       escrowAuthority,
       true // allowOwnerOffCurve
+    );
+
+    // Crée un mint pour la stratégie (ex : le même mint que YT pour le test)
+    strategyMint = ytTokenMint;
+    [strategyPDA] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("strategy"), strategyMint.toBuffer()],
+      program.programId
     );
 
     // Create an initial listing and fund the escrow (skip if already exists)
@@ -195,6 +206,8 @@ describe("marketplace", () => {
           listing: listingPDA,
           escrowAccount: escrowAccount.address,
           escrowAuthority,
+          // Ajoute la stratégie si le programme Rust l'exige
+          strategy: strategyPDA,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([buyerKeypair])
