@@ -1,6 +1,9 @@
+use anchor_lang::prelude::*;
+use anchor_lang::prelude::Program;
+use anchor_lang::ToAccountInfos;
+use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::token::{Mint, Token, TokenAccount, MintTo, mint_to, Transfer, transfer};
 const YIELD_RATE: u64 = 10; // 10% de rendement pour l'exemple
-use anchor_lang::prelude::*;
 
 pub mod error;
 use error::ErrorCode;
@@ -9,8 +12,8 @@ declare_id!("BZUEgp9psZegJarKqAH5WC6HSYCQ4fY2XphuCd5RsyeF");
 
 #[program]
 pub mod lending {
-    use super::*; // Import all items from the current module
-
+    use super::*;
+    
     pub fn initialize_lending_pool(ctx: Context<InitializeLendingPool>) -> Result<()> {
         let lending_pool = &mut ctx.accounts.pool;
         lending_pool.owner = *ctx.accounts.creator.key;
@@ -112,8 +115,15 @@ pub mod lending {
         );
         anchor_spl::token::burn(burn_ctx, amount)?;
 
-        // Calcul du montant à transférer avec un rendement simulé
-        let yield_amount = amount + amount * YIELD_RATE / 100;
+        // Calcul du montant à transférer avec un rendement dynamique basé sur la stratégie
+        let time_elapsed = current_time - user_deposit.deposit_time;
+        let reward = amount
+            .checked_mul(ctx.accounts.strategy.reward_apy)
+            .ok_or(ErrorCode::CalculationError)?
+            .checked_mul(time_elapsed as u64)
+            .ok_or(ErrorCode::CalculationError)?
+            / (365 * 24 * 3600 * 10000);
+        let yield_amount = amount + reward;
 
         // Transfert du vault vers l'utilisateur
         let pool_key = ctx.accounts.pool.key();
@@ -137,6 +147,19 @@ pub mod lending {
 
         user_deposit.amount = 0;
 
+        Ok(())
+    }
+
+    pub fn create_strategy(
+        ctx: Context<CreateStrategy>,
+        reward_apy: u64, // 10_000 = 10.00%
+    ) -> Result<()> {
+        require!(reward_apy <= 100_000, ErrorCode::InvalidAPY);
+
+        let strategy = &mut ctx.accounts.strategy;
+        strategy.token_address = ctx.accounts.token_address.key();
+        strategy.reward_apy = reward_apy;
+        strategy.created_at = Clock::get()?.unix_timestamp;
         Ok(())
     }
 }
@@ -252,7 +275,6 @@ pub struct GetTotalDeposits<'info> {
 }
 
 #[account]
-#[derive(InitSpace)]
 pub struct Pool {
     pub owner: Pubkey,
     pub total_deposits: u64,
@@ -264,7 +286,6 @@ impl Pool {
 }
 
 #[account]
-#[derive(InitSpace)]
 pub struct UserDeposit {
     pub user: Pubkey,
     pub pool: Pubkey,
@@ -275,6 +296,37 @@ pub struct UserDeposit {
 impl UserDeposit {
     pub const INIT_SPACE: usize = 8 + 32 + 32 + 8 + 8; // 8 bytes for account header, 32 bytes for user, 32 bytes for pool, 8 bytes for amount, 8 bytes for deposit_time
 }
+
+// Nouvelle struct de stratégie
+#[account]
+pub struct Strategy {
+    pub token_address: Pubkey,
+    pub reward_apy: u64, // 5% = 5000 (2 décimales)
+    pub created_at: i64,
+}
+
+impl Strategy {
+    pub const INIT_SPACE: usize = 32 + 8 + 8;
+}
+
+#[derive(Accounts)]
+pub struct CreateStrategy<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(
+        init,
+        payer = admin,
+        seeds = [b"strategy", token_address.key().as_ref()],
+        bump,
+        space = 8 + Strategy::INIT_SPACE
+    )]
+    pub strategy: Account<'info, Strategy>,
+
+    pub token_address: Account<'info, Mint>,
+    pub system_program: Program<'info, System>,
+}
+
 // Contexte pour mint des Yield Tokens à un utilisateur
 #[derive(Accounts)]
 pub struct MintYieldToken<'info> {
@@ -325,6 +377,12 @@ pub struct Redeem<'info> {
         bump
     )]
     pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"strategy", yt_mint.key().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
 
     #[account(mut)]
     pub yt_mint: Account<'info, Mint>,

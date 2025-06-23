@@ -6,6 +6,9 @@ pub enum ErrorCode {
     TooEarlyToRedeem,
     #[msg("Insufficient funds in the user's deposit.")]
     InsufficientFunds,
+    #[msg("Erreur de calcul.")]
+    CalculationError,
+    #[msg("APY invalide.")]
+    InvalidAPY,
 }
 
-  

@@ -4,6 +4,7 @@ quote = "=1.0.26"
 syn = "=1.0.109"
 
 [toolchain]
+anchor_version = "0.31.0"
 package_manager = "yarn"
 
 [features]
