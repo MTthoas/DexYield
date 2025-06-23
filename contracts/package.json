@@ -3,10 +3,18 @@
   "type": "module",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "test": "anchor test",
+    "test:dexYield": "anchor test --skip-local-validator tests/dexYield.ts",
+    "test:lending": "anchor test --skip-local-validator tests/lending.ts",
+    "test:marketplace": "anchor test --skip-local-validator tests/marketDex.ts",
+    "build": "anchor build",
+    "deploy": "anchor deploy",
+    "start-validator": "solana-test-validator --reset",
+    "logs": "solana logs"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.31.0",
+    "@coral-xyz/anchor": "^0.31.1",
     "@solana/spl-token": "^0.4.13"
   },
   "devDependencies": {

@@ -13,12 +13,17 @@ pub mod marketplace {
         price: u64,
         amount: u64,
     ) -> Result<()> {
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        require!(price > 0, ErrorCode::InvalidPrice);
+        require!(ctx.accounts.yt_token_account.amount >= amount, ErrorCode::InsufficientFunds);
+
         let listing = &mut ctx.accounts.listing;
         listing.seller = ctx.accounts.seller.key();
         listing.yt_mint = ctx.accounts.yt_token_account.mint;
         listing.amount = amount;
         listing.price = price;
         listing.active = true;
+        listing.created_at = Clock::get()?.unix_timestamp;
 
         // Transfert des YT vers l'escrow
         let cpi_ctx = CpiContext::new(
@@ -38,6 +43,12 @@ pub mod marketplace {
         let listing = &mut ctx.accounts.listing;
         require!(listing.active, ErrorCode::ListingNotActive);
         require!(ctx.accounts.buyer_token_account.amount >= listing.price, ErrorCode::InsufficientPayment);
+        require!(ctx.accounts.buyer.key() != listing.seller, ErrorCode::CannotBuyOwnListing);
+
+        // Vérifier que la liste est toujours valide (protection contre les front-running)
+        let current_time = Clock::get()?.unix_timestamp;
+        let listing_duration = 7 * 24 * 60 * 60; // 7 jours en secondes
+        require!(current_time - listing.created_at <= listing_duration, ErrorCode::ListingExpired);
 
         listing.active = false;
 
@@ -71,23 +82,6 @@ pub mod marketplace {
             },
         );
         transfer(usdc_transfer_ctx, listing.price)?;
-
-        let accounts = lending::cpi::accounts::MintYieldToken {
-            pool: ctx.accounts.pool.to_account_info(),
-            yt_mint: ctx.accounts.yt_mint.to_account_info(),
-            mint_authority: ctx.accounts.pool_authority.to_account_info(),
-            user_token_account: ctx.accounts.buyer_yt_account.to_account_info(),
-            user: ctx.accounts.buyer.to_account_info(),
-            token_program: ctx.accounts.token_program.to_account_info(),
-        };
-
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.lending_program.to_account_info(),
-            accounts,
-            signer,
-        );
-
-        lending::cpi::mint_yield_token(cpi_ctx, listing.amount)?;
 
         Ok(())
     }
@@ -339,10 +333,11 @@ pub struct Listing {
     pub amount: u64,
     pub price: u64,
     pub active: bool,
+    pub created_at: i64,
 }
 
 impl Listing {
-    pub const INIT_SPACE: usize = 32 + 32 + 8 + 8 + 1;
+    pub const INIT_SPACE: usize = 32 + 32 + 8 + 8 + 1 + 8;
 }
 
 #[account]
@@ -366,4 +361,12 @@ pub enum ErrorCode {
     InvalidAPY,
     #[msg("Fonds insuffisants.")]
     InsufficientFunds,
+    #[msg("Montant invalide.")]
+    InvalidAmount,
+    #[msg("Prix invalide.")]
+    InvalidPrice,
+    #[msg("Impossible d'acheter sa propre annonce.")]
+    CannotBuyOwnListing,
+    #[msg("L'annonce a expiré.")]
+    ListingExpired,
 }

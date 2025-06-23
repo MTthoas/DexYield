@@ -12,11 +12,12 @@ name = "contract"
 default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
-no-idl = []
 no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "0.31.0"
-anchor-spl = "0.31.0"
+anchor-lang = "0.31.1"
+anchor-spl = "0.31.1"
+proc-macro2 = "1.0.95"
 lending = { path = "../lending", features = ["cpi"] }
 

@@ -1,9 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_lang::prelude::Program;
 use anchor_lang::ToAccountInfos;
-use anchor_lang::solana_program::program::invoke_signed;
-use anchor_spl::token::{Mint, Token, TokenAccount, MintTo, mint_to, Transfer, transfer};
-const YIELD_RATE: u64 = 10; // 10% de rendement pour l'exemple
+use anchor_spl::token::{Mint, Token, TokenAccount, MintTo, mint_to, Transfer, transfer, Burn, burn};
+const MIN_DEPOSIT: u64 = 1_000_000; // 1 USDC minimum
 
 pub mod error;
 use error::ErrorCode;
@@ -18,7 +17,10 @@ pub mod lending {
         let lending_pool = &mut ctx.accounts.pool;
         lending_pool.owner = *ctx.accounts.creator.key;
         lending_pool.total_deposits = 0;
+        lending_pool.total_yield_distributed = 0;
         lending_pool.vault_account = ctx.accounts.vault_account.key();
+        lending_pool.created_at = Clock::get()?.unix_timestamp;
+        lending_pool.active = true;
         Ok(())
     }
 
@@ -28,11 +30,16 @@ pub mod lending {
         user_deposit.pool = ctx.accounts.pool.key();
         user_deposit.strategy = ctx.accounts.strategy.key();
         user_deposit.amount = 0;
+        user_deposit.yield_earned = 0;
         user_deposit.deposit_time = Clock::get()?.unix_timestamp;
+        user_deposit.last_yield_calculation = Clock::get()?.unix_timestamp;
         Ok(())
     }
 
     pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        require!(amount >= MIN_DEPOSIT, ErrorCode::InsufficientDepositAmount);
+        require!(ctx.accounts.pool.active, ErrorCode::PoolInactive);
+        
         let pool = &mut ctx.accounts.pool;
         let user_deposit = &mut ctx.accounts.user_deposit;
         let strategy = &ctx.accounts.strategy;
@@ -40,23 +47,122 @@ pub mod lending {
         // Vérifie que la stratégie du compte correspond à celle passée
         require_keys_eq!(user_deposit.strategy, strategy.key(), ErrorCode::InvalidStrategy);
 
-        pool.total_deposits += amount;
-        user_deposit.amount += amount;
-        // Met à jour le timestamp à chaque dépôt
-        user_deposit.deposit_time = Clock::get()?.unix_timestamp;
+        // Calcule le yield accumulé avant d'ajouter le nouveau dépôt
+        let current_time = Clock::get()?.unix_timestamp;
+        let time_elapsed = current_time - user_deposit.last_yield_calculation;
+        if time_elapsed > 0 && user_deposit.amount > 0 {
+            let yield_earned = user_deposit.amount
+                .checked_mul(strategy.reward_apy)
+                .ok_or(ErrorCode::CalculationError)?
+                .checked_mul(time_elapsed as u64)
+                .ok_or(ErrorCode::CalculationError)?
+                / (365 * 24 * 3600 * 10000);
+            
+            user_deposit.yield_earned = user_deposit.yield_earned
+                .checked_add(yield_earned)
+                .ok_or(ErrorCode::CalculationError)?;
+        }
+
+        // Transfert des tokens du user vers le vault
+        let transfer_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_token_account.to_account_info(),
+                to: ctx.accounts.vault_account.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        transfer(transfer_ctx, amount)?;
+
+        pool.total_deposits = pool.total_deposits.checked_add(amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.amount = user_deposit.amount.checked_add(amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.deposit_time = current_time;
+        user_deposit.last_yield_calculation = current_time;
+
+        // Mint des Yield Tokens équivalents au montant déposé
+        let pool_key = pool.key();
+        let mint_seeds = &[
+            b"authority",
+            pool_key.as_ref(),
+            &[ctx.bumps.pool_authority],
+        ];
+        let mint_signer = &[&mint_seeds[..]];
+
+        let mint_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            MintTo {
+                mint: ctx.accounts.yt_mint.to_account_info(),
+                to: ctx.accounts.user_yt_account.to_account_info(),
+                authority: ctx.accounts.pool_authority.to_account_info(),
+            },
+            mint_signer,
+        );
+        mint_to(mint_ctx, amount)?;
+
         Ok(())
     }
 
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
-        let pool = &mut ctx.accounts.pool;
+        require!(ctx.accounts.pool.active, ErrorCode::PoolInactive);
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        
         let user_deposit = &mut ctx.accounts.user_deposit;
+        let strategy = &ctx.accounts.strategy;
 
-        if user_deposit.amount < amount {
-            return Err(ErrorCode::InsufficientFunds.into());
+        require!(user_deposit.amount >= amount, ErrorCode::InsufficientFunds);
+
+        // Calcule le yield accumulé avant le retrait
+        let current_time = Clock::get()?.unix_timestamp;
+        let time_elapsed = current_time - user_deposit.last_yield_calculation;
+        if time_elapsed > 0 {
+            let yield_earned = user_deposit.amount
+                .checked_mul(strategy.reward_apy)
+                .ok_or(ErrorCode::CalculationError)?
+                .checked_mul(time_elapsed as u64)
+                .ok_or(ErrorCode::CalculationError)?
+                / (365 * 24 * 3600 * 10000);
+            
+            user_deposit.yield_earned = user_deposit.yield_earned
+                .checked_add(yield_earned)
+                .ok_or(ErrorCode::CalculationError)?;
         }
 
-        pool.total_deposits -= amount;
-        user_deposit.amount -= amount;
+        // Transfert depuis le vault vers l'utilisateur
+        let pool_key = ctx.accounts.pool.key();
+        let authority_seeds = &[
+            b"authority",
+            pool_key.as_ref(),
+            &[ctx.bumps.pool_authority],
+        ];
+        let signer_seeds = [&authority_seeds[..]];
+        
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.vault_account.to_account_info(),
+                to: ctx.accounts.user_token_account.to_account_info(),
+                authority: ctx.accounts.pool_authority.to_account_info(),
+            },
+            &signer_seeds,
+        );
+        transfer(transfer_ctx, amount)?;
+
+        // Mise à jour après avoir utilisé pool.key()
+        let pool = &mut ctx.accounts.pool;
+        pool.total_deposits = pool.total_deposits.checked_sub(amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.amount = user_deposit.amount.checked_sub(amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.last_yield_calculation = current_time;
+
+        // Burn les YT correspondants
+        let burn_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Burn {
+                mint: ctx.accounts.yt_mint.to_account_info(),
+                from: ctx.accounts.user_yt_account.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        burn(burn_ctx, amount)?;
 
         Ok(())
     }
@@ -67,6 +173,26 @@ pub mod lending {
 
     pub fn get_total_deposits(ctx: Context<GetTotalDeposits>) -> Result<u64> {
         Ok(ctx.accounts.pool.total_deposits)
+    }
+
+    pub fn calculate_pending_yield(ctx: Context<CalculatePendingYield>) -> Result<u64> {
+        let user_deposit = &ctx.accounts.user_deposit;
+        let strategy = &ctx.accounts.strategy;
+        let current_time = Clock::get()?.unix_timestamp;
+        
+        let time_elapsed = current_time - user_deposit.last_yield_calculation;
+        if time_elapsed <= 0 || user_deposit.amount == 0 {
+            return Ok(user_deposit.yield_earned);
+        }
+
+        let pending_yield = user_deposit.amount
+            .checked_mul(strategy.reward_apy)
+            .ok_or(ErrorCode::CalculationError)?
+            .checked_mul(time_elapsed as u64)
+            .ok_or(ErrorCode::CalculationError)?
+            / (365 * 24 * 3600 * 10000);
+
+        Ok(user_deposit.yield_earned.checked_add(pending_yield).ok_or(ErrorCode::CalculationError)?)
     }
 
     /// Mint des Yield Tokens (YT) à l'utilisateur à partir du dépôt.
@@ -100,7 +226,10 @@ pub mod lending {
         Ok(())
     }
 
-    pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
+    pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
+        require!(ctx.accounts.pool.active, ErrorCode::PoolInactive);
+        require!(yt_amount > 0, ErrorCode::InvalidAmount);
+        
         let user_deposit = &mut ctx.accounts.user_deposit;
         let current_time = Clock::get()?.unix_timestamp;
         let min_duration: i64 = 60 * 60 * 24 * 7; // 7 jours
@@ -108,32 +237,57 @@ pub mod lending {
         // Vérifie que la stratégie passée correspond à celle du dépôt
         require_keys_eq!(user_deposit.strategy, ctx.accounts.strategy.key(), ErrorCode::InvalidStrategy);
 
+        // Vérifie que l'utilisateur a suffisamment de YT
+        require!(ctx.accounts.user_token_account.amount >= yt_amount, ErrorCode::InsufficientYieldTokens);
+
         if current_time - user_deposit.deposit_time < min_duration {
             return Err(ErrorCode::TooEarlyToRedeem.into());
         }
 
-        let amount = user_deposit.amount;
+        // Calcule le yield accumulé total
+        let time_elapsed = current_time - user_deposit.last_yield_calculation;
+        let mut total_yield_earned = user_deposit.yield_earned;
+        
+        if time_elapsed > 0 && user_deposit.amount > 0 {
+            let pending_yield = user_deposit.amount
+                .checked_mul(ctx.accounts.strategy.reward_apy)
+                .ok_or(ErrorCode::CalculationError)?
+                .checked_mul(time_elapsed as u64)
+                .ok_or(ErrorCode::CalculationError)?
+                / (365 * 24 * 3600 * 10000);
+            
+            total_yield_earned = total_yield_earned
+                .checked_add(pending_yield)
+                .ok_or(ErrorCode::CalculationError)?;
+        }
 
         // Burn les YT
         let burn_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
-            anchor_spl::token::Burn {
+            Burn {
                 mint: ctx.accounts.yt_mint.to_account_info(),
                 from: ctx.accounts.user_token_account.to_account_info(),
                 authority: ctx.accounts.user.to_account_info(),
             },
         );
-        anchor_spl::token::burn(burn_ctx, amount)?;
+        burn(burn_ctx, yt_amount)?;
 
-        // Calcul du montant à transférer avec un rendement dynamique basé sur la stratégie
-        let time_elapsed = current_time - user_deposit.deposit_time;
-        let reward = amount
-            .checked_mul(ctx.accounts.strategy.reward_apy)
+        // Calcule le montant à transférer : principal + yield proportionnel
+        let yield_ratio = if user_deposit.amount > 0 {
+            yt_amount.checked_mul(10000).ok_or(ErrorCode::CalculationError)? / user_deposit.amount
+        } else {
+            10000 // 100% si pas de dépôt restant
+        };
+
+        let principal_amount = yt_amount; // 1:1 ratio with original deposit
+        let yield_amount = total_yield_earned
+            .checked_mul(yield_ratio)
             .ok_or(ErrorCode::CalculationError)?
-            .checked_mul(time_elapsed as u64)
-            .ok_or(ErrorCode::CalculationError)?
-            / (365 * 24 * 3600 * 10000);
-        let yield_amount = amount + reward;
+            / 10000;
+
+        let total_redeem_amount = principal_amount
+            .checked_add(yield_amount)
+            .ok_or(ErrorCode::CalculationError)?;
 
         // Transfert du vault vers l'utilisateur
         let pool_key = ctx.accounts.pool.key();
@@ -142,20 +296,27 @@ pub mod lending {
             pool_key.as_ref(),
             &[ctx.bumps.pool_authority],
         ];
-            
-        let transfer_ctx = CpiContext::new(
+        let signer_seeds = [&authority_seeds[..]];
+        
+        let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.vault_account.to_account_info(),
                 to: ctx.accounts.user_usdc_account.to_account_info(),
                 authority: ctx.accounts.pool_authority.to_account_info(),
             },
+            &signer_seeds,
         );
-        let signer_seeds = [&authority_seeds[..]];
-        let transfer_ctx = transfer_ctx.with_signer(&signer_seeds);
-        transfer(transfer_ctx, yield_amount)?;
+        transfer(transfer_ctx, total_redeem_amount)?;
 
-        user_deposit.amount = 0;
+        // Met à jour les comptes après avoir utilisé pool.key()
+        let pool = &mut ctx.accounts.pool;
+        user_deposit.amount = user_deposit.amount.checked_sub(yt_amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.yield_earned = total_yield_earned.checked_sub(yield_amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.last_yield_calculation = current_time;
+        
+        pool.total_deposits = pool.total_deposits.checked_sub(yt_amount).ok_or(ErrorCode::CalculationError)?;
+        pool.total_yield_distributed = pool.total_yield_distributed.checked_add(yield_amount).ok_or(ErrorCode::CalculationError)?;
 
         Ok(())
     }
@@ -163,13 +324,34 @@ pub mod lending {
     pub fn create_strategy(
         ctx: Context<CreateStrategy>,
         reward_apy: u64, // 10_000 = 10.00%
+        name: String,
+        description: String,
     ) -> Result<()> {
         require!(reward_apy <= 100_000, ErrorCode::InvalidAPY);
+        require!(reward_apy >= 100, ErrorCode::InvalidAPY); // Minimum 0.01%
+        require!(name.len() <= 50, ErrorCode::NameTooLong);
+        require!(description.len() <= 200, ErrorCode::DescriptionTooLong);
 
         let strategy = &mut ctx.accounts.strategy;
         strategy.token_address = ctx.accounts.token_address.key();
         strategy.reward_apy = reward_apy;
+        strategy.name = name;
+        strategy.description = description;
         strategy.created_at = Clock::get()?.unix_timestamp;
+        strategy.active = true;
+        strategy.total_deposited = 0;
+        Ok(())
+    }
+
+    pub fn toggle_strategy_status(ctx: Context<ToggleStrategyStatus>) -> Result<()> {
+        let strategy = &mut ctx.accounts.strategy;
+        strategy.active = !strategy.active;
+        Ok(())
+    }
+
+    pub fn toggle_pool_status(ctx: Context<TogglePoolStatus>) -> Result<()> {
+        let pool = &mut ctx.accounts.pool;
+        pool.active = !pool.active;
         Ok(())
     }
 }
@@ -248,6 +430,27 @@ pub struct Deposit<'info> {
         bump
     )]
     pub strategy: Account<'info, Strategy>,
+
+    #[account(mut)]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user_yt_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub vault_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub yt_mint: Account<'info, Mint>,
+
+    /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
+    #[account(
+        seeds = [b"authority", pool.key().as_ref()],
+        bump
+    )]
+    pub pool_authority: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -274,6 +477,27 @@ pub struct Withdraw<'info> {
         bump
     )]
     pub strategy: Account<'info, Strategy>,
+
+    #[account(mut)]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user_yt_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub vault_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub yt_mint: Account<'info, Mint>,
+
+    /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
+    #[account(
+        seeds = [b"authority", pool.key().as_ref()],
+        bump
+    )]
+    pub pool_authority: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -308,15 +532,69 @@ pub struct GetTotalDeposits<'info> {
     pub pool: Account<'info, Pool>,
 }
 
+#[derive(Accounts)]
+pub struct CalculatePendingYield<'info> {
+    pub user: Signer<'info>,
+
+    #[account(
+        seeds = [b"lending_pool", pool.owner.as_ref()],
+        bump
+    )]
+    pub pool: Account<'info, Pool>,
+
+    #[account(
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
+        bump
+    )]
+    pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"strategy", strategy.key().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
+}
+
+#[derive(Accounts)]
+pub struct ToggleStrategyStatus<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"strategy", strategy.token_address.as_ref()],
+        bump,
+        constraint = admin.key() == strategy.token_address @ ErrorCode::Unauthorized
+    )]
+    pub strategy: Account<'info, Strategy>,
+}
+
+#[derive(Accounts)]
+pub struct TogglePoolStatus<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"lending_pool", admin.key().as_ref()],
+        bump,
+        constraint = admin.key() == pool.owner @ ErrorCode::Unauthorized
+    )]
+    pub pool: Account<'info, Pool>,
+}
+
 #[account]
 pub struct Pool {
     pub owner: Pubkey,
     pub total_deposits: u64,
+    pub total_yield_distributed: u64,
     pub vault_account: Pubkey,
+    pub created_at: i64,
+    pub active: bool,
 }
 
 impl Pool {
-    pub const INIT_SPACE: usize = 8 + 32 + 8 + 32;
+    pub const INIT_SPACE: usize = 8 + 32 + 8 + 8 + 32 + 8 + 1;
 }
 
 #[account]
@@ -325,23 +603,29 @@ pub struct UserDeposit {
     pub pool: Pubkey,
     pub strategy: Pubkey, // Ajout du lien explicite à la stratégie
     pub amount: u64,
+    pub yield_earned: u64,
     pub deposit_time: i64,
+    pub last_yield_calculation: i64,
 }
 
 impl UserDeposit {
-    pub const INIT_SPACE: usize = 8 + 32 + 32 + 32 + 8 + 8; // Ajout 32 pour strategy
+    pub const INIT_SPACE: usize = 8 + 32 + 32 + 32 + 8 + 8 + 8 + 8; // Ajout 32 pour strategy
 }
 
 // Nouvelle struct de stratégie
 #[account]
 pub struct Strategy {
     pub token_address: Pubkey,
-    pub reward_apy: u64, // 5% = 5000 (2 décimales)
+    pub reward_apy: u64,
+    pub name: String,
+    pub description: String,
     pub created_at: i64,
+    pub active: bool,
+    pub total_deposited: u64,
 }
 
 impl Strategy {
-    pub const INIT_SPACE: usize = 32 + 8 + 8;
+    pub const INIT_SPACE: usize = 32 + 8 + (4 + 50) + (4 + 200) + 8 + 1 + 8;
 }
 
 #[derive(Accounts)]
