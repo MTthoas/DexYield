@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
 use anchor_lang::prelude::Program;
-use anchor_lang::ToAccountInfos;
 use anchor_spl::token::{Mint, Token, TokenAccount, MintTo, mint_to, Transfer, transfer, Burn, burn};
 const MIN_DEPOSIT: u64 = 1_000_000; // 1 USDC minimum
 
