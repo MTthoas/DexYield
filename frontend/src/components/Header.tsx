@@ -14,17 +14,14 @@ export default function Header() {
           <span className="text-xl font-bold">YieldFi</span>
         </div>
         <nav className="hidden md:flex gap-6">
-          <Link to="/explore/home" className="text-sm font-medium transition-colors hover:text-primary">
+          <Link to="/" className="text-sm font-medium transition-colors hover:text-primary">
             Home
           </Link>
-          <Link to="/" className="text-sm font-medium transition-colors hover:text-primary">
-            Link
+          <Link to="/lending" className="text-sm font-medium transition-colors hover:text-primary">
+            Lending
           </Link>
           <Link to="/explore/home" className="text-sm font-medium transition-colors hover:text-primary">
-            Link
-          </Link>
-          <Link to="/" className="text-sm font-medium transition-colors hover:text-primary">
-            Link
+            Explore
           </Link>
         </nav>
         <div className="flex items-center gap-4">
