@@ -4,19 +4,18 @@ import { Button } from "@/components/ui/button";
 export function HomeSection() {
   return (
     <section className="w-full min-h-screen flex flex-col mt-16 -pb-4 md:pb-24 lg:pb-32 xl:pb-24">
-      <div className="container relative flex flex-col items-center flex-grow">
+      <div className="w-full max-w-none relative flex flex-col items-center flex-grow px-[5%] lg:px-[8%] xl:px-[12%]">
         <div className="relative w-full">
           <img
             src="/images/yield.jpg"
             alt="YieldFi"
-            className="mx-auto rounded-full object-cover w-[350px] h-[350px] sm:w-[400px] sm:h-[400px] lg:w-[450px] lg:h-[450px] ml-60"
+            className="mx-auto rounded-full object-cover w-[350px] h-[350px] sm:w-[400px] sm:h-[400px] lg:w-[450px] lg:h-[450px]"
           />
-          <div className="absolute top-1/2 left-1/2 transform -translate-y-1/2 -translate-x-[275px]">
-            <h1 className="text-center text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl lg:text-6xl">
-              <span className="text-white">Unlock the P</span>
-              <span className="text-black">ower of DeFi </span>
-              <span className="text-white">Lending &amp;</span>
-              <span className="text-black"> Borrowing</span>
+          <div className="absolute top-1/2 left-1/2 transform -translate-y-1/2 -translate-x-1/2">
+            <h1 className="text-center text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl lg:text-6xl whitespace-nowrap">
+              <span className="text-black">Unlock the Po</span>
+              <span className="text-white">wer of DeFi Lendin</span>
+              <span className="text-black">g &amp; Borrowing</span>
             </h1>
           </div>
         </div>

@@ -3,7 +3,7 @@ import { Percent, CreditCard, BarChart3, Shield, DollarSign, Wallet } from "luci
 export function FeaturesSection() {
   return (
     <section id="features" className="w-full py-12 md:py-24 lg:py-32 bg-muted/50">
-      <div className="container px-4 md:px-6">
+      <div className="w-full max-w-none px-[5%] lg:px-[8%] xl:px-[12%]">
         <div className="flex flex-col items-center justify-center space-y-4 text-center">
           <div className="space-y-2">
             <div className="inline-block rounded-lg bg-primary px-3 py-1 text-sm text-primary-foreground">
