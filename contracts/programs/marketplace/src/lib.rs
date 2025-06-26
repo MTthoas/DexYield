@@ -52,13 +52,13 @@ pub mod marketplace {
 
         listing.active = false;
 
-        let pool_key = ctx.accounts.pool.key();
-        let seeds = &[
-            b"authority",
-            pool_key.as_ref(),
-            &[ctx.bumps.pool_authority],
+        // Utiliser les bonnes seeds pour escrow_authority
+        let escrow_seeds: &[&[u8]] = &[
+            b"escrow",
+            listing.seller.as_ref(),
+            &[ctx.bumps.escrow_authority],
         ];
-        let signer = &[&seeds[..]];
+        let signer_seeds: &[&[&[u8]]] = &[escrow_seeds];
 
         // Transfert des YT du compte escrow vers l'acheteur
         let yt_transfer_ctx = CpiContext::new_with_signer(
@@ -68,7 +68,7 @@ pub mod marketplace {
                 to: ctx.accounts.buyer_yt_account.to_account_info(),
                 authority: ctx.accounts.escrow_authority.to_account_info(),
             },
-            signer,
+            signer_seeds,
         );
         transfer(yt_transfer_ctx, listing.amount)?;
 
