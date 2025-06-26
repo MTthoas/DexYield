@@ -9,3 +9,8 @@ target
 node_modules
 test-ledger
 .yarn
+
+# Lock files
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
