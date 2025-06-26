@@ -3,6 +3,7 @@ import { Button } from './ui/button'
 import { Wallet } from 'lucide-react'
 import { MenuIcon } from '@/icons/MenuIcon'
 import { GithubIcon } from '@/icons/GithubIcon'
+import { WalletButton } from './WalletButton'
 
 export default function Header() {
   return (
@@ -14,7 +15,7 @@ export default function Header() {
         </div>
         <nav className="hidden md:flex gap-6">
           <Link to="/explore/home" className="text-sm font-medium transition-colors hover:text-primary">
-            Link
+            Home
           </Link>
           <Link to="/" className="text-sm font-medium transition-colors hover:text-primary">
             Link
@@ -36,10 +37,7 @@ export default function Header() {
             <GithubIcon className="h-5 w-5" />
             <span className="sr-only">GitHub</span>
           </a>
-          <Button variant="outline" size="sm" className="hidden md:flex">
-            Connect Wallet
-          </Button>
-          <Button size="sm">Launch App</Button>
+          <WalletButton />
           <Button variant="ghost" size="icon" className="md:hidden">
             <MenuIcon className="h-6 w-6" />
             <span className="sr-only">Toggle menu</span>
