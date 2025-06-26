@@ -48,6 +48,6 @@ graph TD
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/dexyield.git
+   git clone https://github.com/MTthoas/dexyield.git
    cd dexyield
    ```
