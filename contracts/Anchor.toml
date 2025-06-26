@@ -4,6 +4,7 @@ quote = "=1.0.26"
 syn = "=1.0.109"
 
 [toolchain]
+anchor_version = "0.31.1"
 package_manager = "yarn"
 
 [features]
@@ -12,11 +13,8 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-contract = "Ch5VcDt2E84VZXpH6oeAhK9c5ordEpdCUvyT6GSvJseg"
+marketplace = "8dHymaYqqKuydLPRAZBbAkzDRh1FqNfQw1SRgEjN9noy"
 lending = "BZUEgp9psZegJarKqAH5WC6HSYCQ4fY2XphuCd5RsyeF"
-
-[programs.devnet]
-contract = "4WC4MDgPpPW3PY4idJT5ffX1NJpkYhLfRv2sDUsGCWLa"
 
 [registry]
 url = "https://api.apr.dev"
