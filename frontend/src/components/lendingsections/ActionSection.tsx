@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 export function ActionSection() {
   return (
     <section className="w-full py-12 md:py-24 lg:py-32 bg-primary text-primary-foreground">
-      <div className="container flex flex-col items-center justify-center gap-6 px-4 md:px-6">
+      <div className="w-full max-w-none flex flex-col items-center justify-center gap-6 px-[5%] lg:px-[8%] xl:px-[12%]">
         <div className="text-center space-y-2">
           <h2 className="text-3xl font-bold tracking-tighter md:text-4xl/tight">
             Ready to maximize your crypto assets?

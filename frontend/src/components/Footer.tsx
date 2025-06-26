@@ -6,8 +6,8 @@ import { GithubIcon } from '@/icons/GithubIcon'
 export default function Footer() {
   return (
     <footer className="w-full border-t bg-background py-6 md:py-12">
-      <div className="container flex flex-col gap-4 px-4 md:flex-row md:px-6">
-        <div className="flex flex-col gap-2 ml-30">
+      <div className="w-full max-w-none flex flex-col gap-4 px-[5%] lg:px-[8%] xl:px-[12%] md:flex-row">
+        <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Wallet className="h-6 w-6 text-primary" />
             <span className="text-xl font-bold">YieldFi</span>
@@ -89,20 +89,20 @@ export default function Footer() {
           </div>
         </div>
       </div>
-      <div className="container mt-6 flex flex-col items-center justify-between gap-4 border-t py-6 md:h-24 md:flex-row md:py-0 ml-4">
-        <p className="text-center text-sm text-muted-foreground ml-32">
+      <div className="w-full max-w-none mt-6 flex flex-col items-center justify-between gap-4 border-t py-6 px-[5%] lg:px-[8%] xl:px-[12%] md:h-24 md:flex-row md:py-0">
+        <p className="text-center text-sm text-muted-foreground">
           &copy; {new Date().getFullYear()} YieldFi. All rights reserved.
         </p>
-        <div className="flex items-center gap-4 mr-40">
-          <Link
-            to="https://github.com/MTthoas/DexYield"
+        <div className="flex items-center gap-4">
+          <a
+            href="https://github.com/MTthoas/DexYield"
             className="text-muted-foreground hover:text-foreground"
             target="_blank"
             rel="noopener noreferrer"
           >
             <GithubIcon className="h-5 w-5" />
             <span className="sr-only">GitHub</span>
-          </Link>
+          </a>
         </div>
       </div>
     </footer>
