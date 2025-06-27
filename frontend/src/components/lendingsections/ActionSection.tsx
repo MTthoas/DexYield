@@ -15,7 +15,7 @@ export function ActionSection() {
         </div>
         <div className="mt-4 flex flex-row gap-2 items-center justify-center">
           <Button size="lg" variant="secondary" className="gap-1">
-            Launch App <ArrowRight className="h-4 w-4" />
+            Launch App<ArrowRight className="h-4 w-4" />
           </Button>
           <Button
             size="lg"
