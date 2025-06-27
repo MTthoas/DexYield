@@ -20,20 +20,22 @@ export function HowItWorksSection() {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
               1
             </div>
-            <div className="hidden md:block absolute top-6 left-full h-0.5 w-full -translate-x-6 bg-muted-foreground/30"></div>
+            {/* <div className="hidden md:block absolute top-6 left-full h-0.5 w-full -translate-x-6 bg-muted-foreground/30"></div> */}
             <h3 className="text-xl font-bold">Connect Wallet</h3>
             <p className="text-center text-muted-foreground">
-              Connect your crypto wallet to our platform securely with just a few clicks.
+              Connect your crypto wallet to our platform securely with just a
+              few clicks.
             </p>
           </div>
           <div className="flex flex-col items-center space-y-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
               2
             </div>
-            <div className="hidden md:block absolute top-6 left-full h-0.5 w-full -translate-x-6 bg-muted-foreground/30"></div>
+            {/* <div className="hidden md:block absolute top-6 left-full h-0.5 w-full -translate-x-6 bg-muted-foreground/30"></div> */}
             <h3 className="text-xl font-bold">Deposit Assets</h3>
             <p className="text-center text-muted-foreground">
-              Deposit your crypto assets to start earning interest or use as collateral for borrowing.
+              Deposit your crypto assets to start earning interest or use as
+              collateral for borrowing.
             </p>
           </div>
           <div className="flex flex-col items-center space-y-4">
@@ -42,7 +44,8 @@ export function HowItWorksSection() {
             </div>
             <h3 className="text-xl font-bold">Start Earning</h3>
             <p className="text-center text-muted-foreground">
-              Your assets immediately start earning interest or you can borrow against your collateral.
+              Your assets immediately start earning interest or you can borrow
+              against your collateral.
             </p>
           </div>
         </div>

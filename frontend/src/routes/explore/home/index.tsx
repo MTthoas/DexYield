@@ -12,14 +12,12 @@ export const Route = createFileRoute("/explore/home/")({
 
 export default function HomePage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="flex-1">
-        <HomeSection />
-        <FeaturesSection />
-        <HowItWorksSection />
-        <FAQSection />
-        <ActionSection />
-      </main>
-    </div>
+    <main className="flex min-h-screen flex-col">
+      <HomeSection />
+      <FeaturesSection />
+      <HowItWorksSection />
+      <FAQSection />
+      <ActionSection />
+    </main>
   );
 }

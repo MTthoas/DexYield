@@ -1,0 +1,19 @@
+.wallet-adapter-button-trigger {
+  background-color: white !important;
+  color: black !important; /* Tailwind text-foreground */
+  font-size: 0.75rem !important; /* text-xs */
+  padding: 1rem 3rem !important; /* py-1 px-2 */
+  height: 1.75rem !important; /* h-7 */
+  font-weight: 500 !important; /* font-medium */
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.25rem !important; /* gap-1 */
+  min-width: 0 !important;
+  line-height: 1 !important;
+  transition: background-color 0.2s, color 0.2s !important;
+}
+
+.wallet-adapter-button-trigger:hover {
+  background-color: #f1f5f9 !important; /* Tailwind accent */
+  color: #1e293b !important; /* Tailwind accent-foreground */
+}

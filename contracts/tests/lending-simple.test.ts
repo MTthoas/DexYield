@@ -140,7 +140,9 @@ describe("Lending Simple Tests", () => {
 
         // Vérifier que la stratégie a été créée
         const strategy = await program.account.strategy.fetch(strategyPda);
-        expect(strategy.tokenAddress.toString()).to.equal(collateralMint.toString());
+        expect(strategy.tokenAddress.toString()).to.equal(
+          collateralMint.toString()
+        );
         expect(strategy.rewardApy.toNumber()).to.equal(500);
         expect(strategy.active).to.be.true;
       } catch (error) {
@@ -195,11 +197,14 @@ describe("Lending Simple Tests", () => {
 
     it("Should have created collateral mint", () => {
       expect(collateralMint).to.exist;
-      expect(collateralMint.toString()).to.not.equal(PublicKey.default.toString());
+      expect(collateralMint.toString()).to.not.equal(
+        PublicKey.default.toString()
+      );
     });
 
     it("Should have user with collateral tokens", async () => {
-      const userTokenAccountInfo = await provider.connection.getTokenAccountBalance(userCollateralAccount);
+      const userTokenAccountInfo =
+        await provider.connection.getTokenAccountBalance(userCollateralAccount);
       expect(parseInt(userTokenAccountInfo.value.amount)).to.be.greaterThan(0);
     });
 
@@ -214,7 +219,9 @@ describe("Lending Simple Tests", () => {
         expect(pool).to.exist;
         expect(pool.owner.toString()).to.equal(admin.publicKey.toString());
       } catch (error) {
-        console.log("Pool not initialized yet, this is expected for some tests");
+        console.log(
+          "Pool not initialized yet, this is expected for some tests"
+        );
       }
     });
   });
