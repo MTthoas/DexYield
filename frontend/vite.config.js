@@ -19,8 +19,11 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
+    process: {
+      env: {},
+    },
   },
   optimizeDeps: {
-    include: ['@solana/web3.js', '@solana/wallet-adapter-base', '@solana/wallet-adapter-react'],
+    include: ['@solana/web3.js', '@solana/wallet-adapter-base', '@solana/wallet-adapter-react', '@coral-xyz/anchor'],
   },
 });

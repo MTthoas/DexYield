@@ -45,7 +45,7 @@ export default function Footer() {
             </Link>
             <a
               href="https://github.com/MTthoas/DexYield"
-              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all"
+              className="p-2 rounded-lg bg-white/5 hover:bg-slate-800/50 text-white/70 hover:text-white transition-all"
               target="_blank"
               rel="noopener noreferrer"
             >

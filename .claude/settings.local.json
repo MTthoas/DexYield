@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(cargo update:*)",
+      "Bash(cargo:*)",
+      "Bash(timeout 30 cargo check)",
+      "Bash(anchor build)",
+      "Bash(rm:*)",
+      "Bash(CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP=1 anchor build)",
+      "Bash(mkdir:*)",
+      "Bash(rustup:*)",
+      "Bash(rustc:*)",
+      "Bash(CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP=true cargo +1.79.0 build)",
+      "Bash(anchor:*)",
+      "Bash(solana:*)",
+      "Bash(PATH=/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH anchor build)",
+      "Bash(export:*)",
+      "Bash(cp:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm install)"
+    ],
+    "deny": []
+  }
+}

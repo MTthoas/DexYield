@@ -13,14 +13,18 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-marketplace = "8dHymaYqqKuydLPRAZBbAkzDRh1FqNfQw1SRgEjN9noy"
-lending = "BZUEgp9psZegJarKqAH5WC6HSYCQ4fY2XphuCd5RsyeF"
+lending = "GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo"
+marketplace = "Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv"
+
+[programs.devnet]
+lending = "GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo"
+marketplace = "Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

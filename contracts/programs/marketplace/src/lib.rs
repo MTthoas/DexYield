@@ -1,8 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Transfer, transfer, Mint};
-use lending;
 
-declare_id!("8dHymaYqqKuydLPRAZBbAkzDRh1FqNfQw1SRgEjN9noy");
+// Import correct du programme lending
+extern crate lending;
+use lending::{Pool, UserDeposit};
+
+declare_id!("Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv");
 
 #[program]
 pub mod marketplace {
@@ -226,18 +229,19 @@ pub struct BuyYT<'info> {
     pub escrow_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
-    pub pool: Account<'info, lending::Pool>,
+    pub pool: Account<'info, Pool>,
 
     #[account(mut)]
     pub yt_mint: Account<'info, Mint>,
 
     /// CHECK: PDA utilisée uniquement comme signer
-    #[account(seeds = [b"authority", pool.key().as_ref()], bump)]
+    #[account(seeds = [b"authority", pool.owner.as_ref()], bump)]
     pub pool_authority: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
 
-    pub lending_program: Program<'info, lending::program::Lending>,
+    /// CHECK: Programme lending référencé
+    pub lending_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

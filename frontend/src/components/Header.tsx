@@ -113,7 +113,7 @@ export default function Header() {
     ? "text-white/70 hover:text-white"
     : "text-black/70 hover:text-black";
   const buttonHoverClass = isDarkBackground
-    ? "hover:bg-white/10"
+    ? "hover:bg-slate-800/50"
     : "hover:bg-black/10";
 
   return (
