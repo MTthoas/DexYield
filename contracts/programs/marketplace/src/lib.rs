@@ -143,10 +143,10 @@ pub mod marketplace {
             / (365 * 24 * 3600 * 10000);
 
         // Transfert du YT depuis le vault vers l'utilisateur
-        let pool_owner = ctx.accounts.pool.owner;
+        let pool_key = ctx.accounts.pool.key();
         let signer_seeds: &[&[u8]] = &[
             b"authority",
-            pool_owner.as_ref(),
+            pool_key.as_ref(),
             &[ctx.bumps.pool_authority],
         ];
         let signer: &[&[&[u8]]] = &[signer_seeds];
@@ -293,14 +293,14 @@ pub struct Redeem<'info> {
         seeds = [b"lending_pool", pool.owner.as_ref()],
         bump
     )]
-    pub pool: Account<'info, Pool>,
+    pub pool: Account<'info, lending::Pool>,
 
     #[account(
         mut,
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
         bump
     )]
-    pub user_deposit: Account<'info, UserDeposit>,
+    pub user_deposit: Account<'info, lending::UserDeposit>,
 
     #[account(
         seeds = [b"strategy", yt_mint.key().as_ref()],
@@ -322,7 +322,7 @@ pub struct Redeem<'info> {
 
     /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
     #[account(
-        seeds = [b"authority", pool.owner.as_ref()],
+        seeds = [b"authority", pool.key().as_ref()],
         bump
     )]
     pub pool_authority: UncheckedAccount<'info>,

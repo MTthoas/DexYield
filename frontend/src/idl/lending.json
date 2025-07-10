@@ -1,5 +1,5 @@
 {
-  "address": "Bfg4pRKA54jbYPDJioTBLMzBCujRcqCN3SBTZjhyMVr9",
+  "address": "GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo",
   "metadata": {
     "name": "lending",
     "version": "0.1.0",
@@ -108,7 +108,8 @@
               },
               {
                 "kind": "account",
-                "path": "strategy"
+                "path": "strategy.token_address",
+                "account": "Strategy"
               }
             ]
           }
@@ -287,7 +288,8 @@
               },
               {
                 "kind": "account",
-                "path": "strategy"
+                "path": "strategy.token_address",
+                "account": "Strategy"
               }
             ]
           }
@@ -306,7 +308,28 @@
         },
         {
           "name": "yt_mint",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool.owner",
+                "account": "Pool"
+              }
+            ]
+          }
         },
         {
           "name": "pool_authority",
@@ -328,7 +351,8 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
+                "path": "pool.owner",
+                "account": "Pool"
               }
             ]
           }
@@ -492,7 +516,8 @@
               },
               {
                 "kind": "account",
-                "path": "strategy"
+                "path": "strategy.token_address",
+                "account": "Strategy"
               }
             ]
           }
@@ -551,6 +576,62 @@
         {
           "name": "vault_account",
           "writable": true
+        },
+        {
+          "name": "yt_mint",
+          "docs": [
+            "Mint YT (Yield Token) - PDA séparé utilisant creator.key() pour éviter la dépendance circulaire"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
@@ -662,7 +743,8 @@
               },
               {
                 "kind": "account",
-                "path": "strategy"
+                "path": "strategy.token_address",
+                "account": "Strategy"
               }
             ]
           }
@@ -722,7 +804,28 @@
         },
         {
           "name": "yt_mint",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool.owner",
+                "account": "Pool"
+              }
+            ]
+          }
         },
         {
           "name": "mint_authority",
@@ -744,7 +847,8 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
+                "path": "pool.owner",
+                "account": "Pool"
               }
             ]
           }
@@ -874,14 +978,36 @@
               },
               {
                 "kind": "account",
-                "path": "strategy"
+                "path": "strategy.token_address",
+                "account": "Strategy"
               }
             ]
           }
         },
         {
           "name": "yt_mint",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool.owner",
+                "account": "Pool"
+              }
+            ]
+          }
         },
         {
           "name": "user_token_account",
@@ -915,7 +1041,8 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
+                "path": "pool.owner",
+                "account": "Pool"
               }
             ]
           }
@@ -1133,7 +1260,8 @@
               },
               {
                 "kind": "account",
-                "path": "strategy"
+                "path": "strategy.token_address",
+                "account": "Strategy"
               }
             ]
           }
@@ -1152,7 +1280,28 @@
         },
         {
           "name": "yt_mint",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool.owner",
+                "account": "Pool"
+              }
+            ]
+          }
         },
         {
           "name": "pool_authority",
@@ -1174,7 +1323,8 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
+                "path": "pool.owner",
+                "account": "Pool"
               }
             ]
           }
@@ -1204,8 +1354,7 @@
         177,
         109,
         188
-      ],
-      "size": 105
+      ]
     },
     {
       "name": "Strategy",
@@ -1218,8 +1367,7 @@
         106,
         169,
         102
-      ],
-      "size": 200
+      ]
     },
     {
       "name": "UserDeposit",
@@ -1232,8 +1380,7 @@
         137,
         185,
         35
-      ],
-      "size": 160
+      ]
     }
   ],
   "errors": [
@@ -1318,6 +1465,10 @@
           },
           {
             "name": "vault_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "yt_mint",
             "type": "pubkey"
           },
           {

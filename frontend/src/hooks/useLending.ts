@@ -3,11 +3,12 @@ import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useContracts } from './useContracts';
 import { findLendingPoolPDA, findUserDepositPDA, findStrategyPDA } from '../lib/contracts';
+import { TOKEN_SYMBOLS } from '@/lib/constants';
 
 export const useLending = () => {
   const { publicKey } = useWallet();
   const contractService = useContracts();
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userDeposits, setUserDeposits] = useState<any[]>([]);
@@ -20,10 +21,10 @@ export const useLending = () => {
     strategy: PublicKey
   ) => {
     if (!contractService || !publicKey) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const txId = await contractService.initializeUserDeposit(
         publicKey,
@@ -52,10 +53,10 @@ export const useLending = () => {
     ytMint: PublicKey
   ) => {
     if (!contractService || !publicKey) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const txId = await contractService.deposit(
         publicKey,
@@ -89,10 +90,10 @@ export const useLending = () => {
     ytMint: PublicKey
   ) => {
     if (!contractService || !publicKey) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const txId = await contractService.withdraw(
         publicKey,
@@ -126,10 +127,10 @@ export const useLending = () => {
     vaultAccount: PublicKey
   ) => {
     if (!contractService || !publicKey) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const txId = await contractService.redeem(
         publicKey,
@@ -160,10 +161,10 @@ export const useLending = () => {
     description: string
   ) => {
     if (!contractService || !publicKey) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const txId = await contractService.createStrategy(
         publicKey,
@@ -188,22 +189,26 @@ export const useLending = () => {
     poolOwner: PublicKey,
     strategy: PublicKey
   ) => {
-    if (!contractService || !publicKey) return null;
-    
+    if (!contractService || !publicKey) return { amount: 0, yieldEarned: 0, strategy };
+
     try {
       const [poolPDA] = findLendingPoolPDA(poolOwner);
       const depositData = await contractService.getUserDeposit(publicKey, poolPDA, strategy);
       return depositData;
     } catch (err) {
+      // Si le compte n'existe pas, retourne un dépôt vide
+      if (err?.message?.includes('Account does not exist')) {
+        return { amount: 0, yieldEarned: 0, strategy };
+      }
       console.error('Error fetching user deposit:', err);
-      return null;
+      return { amount: 0, yieldEarned: 0, strategy };
     }
   }, [contractService, publicKey]);
 
   // Get strategy data
   const getStrategy = useCallback(async (tokenAddress: PublicKey) => {
     if (!contractService) return null;
-    
+
     try {
       const strategyData = await contractService.getStrategy(tokenAddress);
       return strategyData;
@@ -216,7 +221,7 @@ export const useLending = () => {
   // Get pool data
   const getPool = useCallback(async (poolOwner: PublicKey) => {
     if (!contractService) return null;
-    
+
     try {
       const poolData = await contractService.getPool(poolOwner);
       return poolData;
@@ -228,14 +233,32 @@ export const useLending = () => {
 
   // Fetch all strategies
   const fetchStrategies = useCallback(async () => {
-    if (!contractService) return;
-    
+    if (!contractService || typeof contractService.getAllStrategies !== 'function') return;
     setLoading(true);
     try {
-      const allStrategies = await contractService.getAllStrategies();
-      console.log("Fetched strategies from contract:", allStrategies);
+      // Utilisation de la méthode publique du service
+      const strategiesRaw = await contractService.getAllStrategies();
+      // Correction : mapping Anchor
+      const allStrategies = strategiesRaw.map((s: any) => {
+        const account = s.account || {};
+        const mintStr = account.tokenAddress?.toBase58();
+        return {
+          id: s.publicKey?.toBase58(),
+          tokenAddress: mintStr,
+          rewardApy: account.rewardApy?.toNumber(),
+          name: account.name,
+          description: account.description,
+          createdAt: account.createdAt?.toNumber(),
+          active: account.active,
+          totalDeposited: account.totalDeposited?.toNumber() || 0,
+          // Récupère enfin le vrai symbole depuis ta constante
+          tokenSymbol: TOKEN_SYMBOLS[mintStr] || 'UNKNOWN',
+        };
+      });
+      console.log("Fetched strategies from contract (Anchor mapping):", allStrategies);
       setStrategies(allStrategies);
       setError(null);
+      return allStrategies;
     } catch (err) {
       console.error('Error fetching strategies:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch strategies');
@@ -245,19 +268,14 @@ export const useLending = () => {
     }
   }, [contractService]);
 
-  // Load initial data
-  useEffect(() => {
-    if (contractService) {
-      fetchStrategies();
-    }
-  }, [contractService, fetchStrategies]);
-
   // Get user token balance
   const getUserTokenBalance = useCallback(async (tokenMint: PublicKey) => {
     if (!contractService || !publicKey) return null;
-    
+
     try {
+      console.log('getUserTokenBalance: mint', tokenMint.toString(), 'owner', publicKey.toString());
       const tokenAccountInfo = await contractService.getTokenAccountInfo(tokenMint, publicKey);
+      console.log('Résultat getTokenAccountInfo:', tokenAccountInfo);
       return tokenAccountInfo;
     } catch (err) {
       console.error('Error fetching user token balance:', err);
@@ -271,10 +289,10 @@ export const useLending = () => {
     vaultAccount: PublicKey
   ) => {
     if (!contractService || !publicKey) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const txId = await contractService.initializeLendingPool(creator, vaultAccount);
       console.log('Lending pool initialized:', txId);

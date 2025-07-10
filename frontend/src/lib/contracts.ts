@@ -1,8 +1,10 @@
-import { AnchorProvider, Program, web3 } from '@coral-xyz/anchor';
-import type { Idl } from '@coral-xyz/anchor/dist/cjs/types';
+import { AnchorProvider, Program, web3, BN } from '@coral-xyz/anchor';
+import type { Idl } from '@coral-xyz/anchor';
 import { PublicKey, Connection, clusterApiUrl } from '@solana/web3.js';
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Buffer } from 'buffer';
 import { TokenAccountManager } from './tokenAccounts';
+import { LENDING_PROGRAM_ID, MARKETPLACE_PROGRAM_ID } from './constants';
 import lendingIdl from '../idl/lending.json';
 import marketplaceIdl from '../idl/marketplace.json';
 
@@ -11,8 +13,6 @@ console.log('Lending IDL loaded:', lendingIdl);
 console.log('Lending IDL address:', lendingIdl.address);
 console.log('Lending IDL instructions:', lendingIdl.instructions?.length || 0);
 
-export const LENDING_PROGRAM_ID = new PublicKey('Bfg4pRKA54jbYPDJioTBLMzBCujRcqCN3SBTZjhyMVr9');
-export const MARKETPLACE_PROGRAM_ID = new PublicKey('FCfnh2GqBzjW5CSXqwpLvoGxwDvjX5cECyHQsEyGKFup');
 
 export const getConnection = () => {
   return new Connection(clusterApiUrl('devnet'));
@@ -115,7 +115,7 @@ export const getLendingProgram = (provider: AnchorProvider) => {
       provider: provider
     });
     
-    const program = new Program(compatibleIdl as Idl, LENDING_PROGRAM_ID, provider);
+    const program = new Program(compatibleIdl as Idl, provider);
     console.log('Program created successfully:', program);
     console.log('Program type:', typeof program);
     console.log('Program methods exists:', !!program.methods);
@@ -136,7 +136,7 @@ export const getLendingProgram = (provider: AnchorProvider) => {
 
 export const getMarketplaceProgram = (provider: AnchorProvider) => {
   try {
-    return new Program(marketplaceIdl as Idl, MARKETPLACE_PROGRAM_ID, provider);
+    return new Program(marketplaceIdl as Idl, provider);
   } catch (error) {
     console.error('Error creating marketplace program:', error);
     throw new Error('Failed to initialize marketplace program');
@@ -144,30 +144,44 @@ export const getMarketplaceProgram = (provider: AnchorProvider) => {
 };
 
 // Helper functions for PDA derivation
-export const findLendingPoolPDA = (owner: PublicKey) => {
+export const findLendingPoolPDA = (owner: PublicKey | string) => {
+  const ownerKey = owner instanceof PublicKey ? owner : new PublicKey(owner);
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('lending_pool'), owner.toBuffer()],
+    [Buffer.from('lending_pool'), ownerKey.toBuffer()],
     LENDING_PROGRAM_ID
   );
 };
 
-export const findUserDepositPDA = (user: PublicKey, pool: PublicKey, strategy: PublicKey) => {
+export const findUserDepositPDA = (user: PublicKey | string, pool: PublicKey | string, strategy: PublicKey | string) => {
+  const userKey = user instanceof PublicKey ? user : new PublicKey(user);
+  const poolKey = pool instanceof PublicKey ? pool : new PublicKey(pool);
+  const strategyKey = strategy instanceof PublicKey ? strategy : new PublicKey(strategy);
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('user_deposit'), user.toBuffer(), pool.toBuffer(), strategy.toBuffer()],
+    [Buffer.from('user_deposit'), userKey.toBuffer(), poolKey.toBuffer(), strategyKey.toBuffer()],
     LENDING_PROGRAM_ID
   );
 };
 
-export const findStrategyPDA = (tokenAddress: PublicKey) => {
+export const findStrategyPDA = (tokenAddress: PublicKey | string) => {
+  const tokenKey = tokenAddress instanceof PublicKey ? tokenAddress : new PublicKey(tokenAddress);
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('strategy'), tokenAddress.toBuffer()],
+    [Buffer.from('strategy'), tokenKey.toBuffer()],
     LENDING_PROGRAM_ID
   );
 };
 
-export const findPoolAuthorityPDA = (pool: PublicKey) => {
+export const findPoolAuthorityPDA = (poolOwner: PublicKey | string) => {
+  const ownerKey = poolOwner instanceof PublicKey ? poolOwner : new PublicKey(poolOwner);
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('authority'), pool.toBuffer()],
+    [Buffer.from('authority'), ownerKey.toBuffer()],
+    LENDING_PROGRAM_ID
+  );
+};
+
+export const findYtMintPDA = (poolOwner: PublicKey | string) => {
+  const ownerKey = poolOwner instanceof PublicKey ? poolOwner : new PublicKey(poolOwner);
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('yt_mint'), ownerKey.toBuffer()],
     LENDING_PROGRAM_ID
   );
 };
@@ -247,6 +261,30 @@ export class ContractService {
       .rpc();
   }
 
+  async initializeStrategy(
+    creator: PublicKey,
+    tokenAddress: PublicKey,
+    rewardApy: number,
+    name: string,
+    description: string
+  ) {
+    if (!this.lendingProgram) {
+      throw new Error('Lending program not initialized');
+    }
+    
+    const [strategyPDA] = findStrategyPDA(tokenAddress);
+    
+    return await this.lendingProgram.methods
+      .initializeStrategy(rewardApy, name, description)
+      .accounts({
+        creator,
+        strategy: strategyPDA,
+        tokenAddress,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .rpc();
+  }
+
   async initializeUserDeposit(
     user: PublicKey,
     poolOwner: PublicKey,
@@ -287,10 +325,10 @@ export class ContractService {
     
     const [poolPDA] = findLendingPoolPDA(poolOwner);
     const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategy);
-    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolPDA);
+    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
     
     return await this.lendingProgram.methods
-      .deposit(new web3.BN(amount))
+      .deposit(new BN(amount))
       .accounts({
         user,
         pool: poolPDA,
@@ -322,10 +360,10 @@ export class ContractService {
     
     const [poolPDA] = findLendingPoolPDA(poolOwner);
     const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategy);
-    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolPDA);
+    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
     
     return await this.lendingProgram.methods
-      .withdraw(new web3.BN(amount))
+      .withdraw(new BN(amount))
       .accounts({
         user,
         pool: poolPDA,
@@ -361,7 +399,7 @@ export class ContractService {
     console.log('Strategy PDA:', strategyPDA.toString());
     
     return await this.lendingProgram.methods
-      .createStrategy(new web3.BN(rewardApy), name, description)
+      .createStrategy(new BN(rewardApy), name, description)
       .accounts({
         admin,
         strategy: strategyPDA,
@@ -383,10 +421,10 @@ export class ContractService {
   ) {
     const [poolPDA] = findLendingPoolPDA(poolOwner);
     const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategy);
-    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolPDA);
+    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
     
     return await this.lendingProgram.methods
-      .redeem(new web3.BN(ytAmount))
+      .redeem(new BN(ytAmount))
       .accounts({
         user,
         pool: poolPDA,
@@ -410,10 +448,14 @@ export class ContractService {
     price: number,
     amount: number
   ) {
+    if (!this.marketplaceProgram) {
+      throw new Error('Marketplace program not initialized');
+    }
+    
     const [listingPDA] = findListingPDA(seller);
     
     return await this.marketplaceProgram.methods
-      .listYt(new web3.BN(price), new web3.BN(amount))
+      .listYt(new BN(price), new BN(amount))
       .accounts({
         seller,
         ytTokenAccount,
@@ -435,6 +477,10 @@ export class ContractService {
     pool: PublicKey,
     ytMint: PublicKey
   ) {
+    if (!this.marketplaceProgram) {
+      throw new Error('Marketplace program not initialized');
+    }
+    
     const [listingPDA] = findListingPDA(seller);
     const [escrowAuthorityPDA] = findEscrowAuthorityPDA(seller);
     const [poolAuthorityPDA] = findPoolAuthorityPDA(pool);
@@ -463,6 +509,10 @@ export class ContractService {
     escrowAccount: PublicKey,
     sellerTokenAccount: PublicKey
   ) {
+    if (!this.marketplaceProgram) {
+      throw new Error('Marketplace program not initialized');
+    }
+    
     const [listingPDA] = findListingPDA(seller);
     const [escrowAuthorityPDA] = findEscrowAuthorityPDA(seller);
     
@@ -481,23 +531,35 @@ export class ContractService {
 
   // Account fetching functions
   async getPool(poolOwner: PublicKey) {
+    if (!this.lendingProgram) {
+      throw new Error('Lending program not initialized');
+    }
     const [poolPDA] = findLendingPoolPDA(poolOwner);
-    return await this.lendingProgram.account.pool.fetch(poolPDA);
+    return await (this.lendingProgram as any).account.pool.fetch(poolPDA);
   }
 
   async getUserDeposit(user: PublicKey, pool: PublicKey, strategy: PublicKey) {
+    if (!this.lendingProgram) {
+      throw new Error('Lending program not initialized');
+    }
     const [userDepositPDA] = findUserDepositPDA(user, pool, strategy);
-    return await this.lendingProgram.account.userDeposit.fetch(userDepositPDA);
+    return await (this.lendingProgram as any).account.userDeposit.fetch(userDepositPDA);
   }
 
   async getStrategy(tokenAddress: PublicKey) {
+    if (!this.lendingProgram) {
+      throw new Error('Lending program not initialized');
+    }
     const [strategyPDA] = findStrategyPDA(tokenAddress);
-    return await this.lendingProgram.account.strategy.fetch(strategyPDA);
+    return await (this.lendingProgram as any).account.strategy.fetch(strategyPDA);
   }
 
   async getListing(seller: PublicKey) {
+    if (!this.marketplaceProgram) {
+      throw new Error('Marketplace program not initialized');
+    }
     const [listingPDA] = findListingPDA(seller);
-    return await this.marketplaceProgram.account.listing.fetch(listingPDA);
+    return await (this.marketplaceProgram as any).account.listing.fetch(listingPDA);
   }
 
   async getAllListings() {
@@ -507,9 +569,9 @@ export class ContractService {
     }
     
     try {
-      const listings = await this.marketplaceProgram.account.listing.all();
+      const listings = await (this.marketplaceProgram as any).account.listing.all();
       console.log('Listings from blockchain:', listings);
-      return listings.filter(listing => listing.account.active);
+      return listings.filter((listing: any) => listing.account.active);
     } catch (error) {
       console.error('Error fetching listings:', error);
       return [];
@@ -523,7 +585,7 @@ export class ContractService {
     }
     
     try {
-      const strategies = await this.lendingProgram.account.strategy.all();
+      const strategies = await (this.lendingProgram as any).account.strategy.all();
       console.log('Strategies from blockchain:', strategies);
       return strategies;
     } catch (error) {
@@ -539,5 +601,34 @@ export class ContractService {
 
   async createTokenAccountInstruction(mint: PublicKey, owner: PublicKey, payer: PublicKey) {
     return await this.tokenAccountManager.getOrCreateTokenAccount(mint, owner, payer);
+  }
+
+  // Helper function to build accounts for lending operations
+  async buildLendingAccounts(
+    user: PublicKey,
+    poolOwner: PublicKey,
+    tokenMint: PublicKey
+  ) {
+    const [poolPDA] = findLendingPoolPDA(poolOwner);
+    const [strategyPDA] = findStrategyPDA(tokenMint);
+    const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategyPDA);
+    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
+    const [ytMintPDA] = findYtMintPDA(poolOwner);
+    
+    // Get associated token accounts
+    const userTokenAccount = await getAssociatedTokenAddress(tokenMint, user);
+    const userYtAccount = await getAssociatedTokenAddress(ytMintPDA, user);
+    const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolPDA, true);
+    
+    return {
+      poolPDA,
+      strategyPDA,
+      userDepositPDA,
+      poolAuthorityPDA,
+      ytMintPDA,
+      userTokenAccount,
+      userYtAccount,
+      vaultAccount,
+    };
   }
 }

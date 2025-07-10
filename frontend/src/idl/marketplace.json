@@ -1,5 +1,5 @@
 {
-  "address": "FCfnh2GqBzjW5CSXqwpLvoGxwDvjX5cECyHQsEyGKFup",
+  "address": "Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv",
   "metadata": {
     "name": "marketplace",
     "version": "0.1.0",
@@ -117,7 +117,8 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
+                "path": "pool.owner",
+                "account": "Pool"
               }
             ]
           }
@@ -127,8 +128,7 @@
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          "name": "lending_program",
-          "address": "Bfg4pRKA54jbYPDJioTBLMzBCujRcqCN3SBTZjhyMVr9"
+          "name": "lending_program"
         }
       ],
       "args": []
@@ -417,6 +417,10 @@
               {
                 "kind": "account",
                 "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "strategy"
               }
             ]
           }
@@ -481,7 +485,8 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
+                "path": "pool.owner",
+                "account": "Pool"
               }
             ]
           }
@@ -647,6 +652,10 @@
           },
           {
             "name": "vault_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "yt_mint",
             "type": "pubkey"
           },
           {
