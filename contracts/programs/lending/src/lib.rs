@@ -6,7 +6,7 @@ const MIN_DEPOSIT: u64 = 1_000_000; // 1 USDC minimum
 pub mod error;
 use error::ErrorCode;
 
-declare_id!("BZUEgp9psZegJarKqAH5WC6HSYCQ4fY2XphuCd5RsyeF");
+declare_id!("GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo");
 
 #[program]
 pub mod lending {
@@ -18,8 +18,11 @@ pub mod lending {
         lending_pool.total_deposits = 0;
         lending_pool.total_yield_distributed = 0;
         lending_pool.vault_account = ctx.accounts.vault_account.key();
+        lending_pool.yt_mint = ctx.accounts.yt_mint.key(); // Stocker l'adresse du mint YT
         lending_pool.created_at = Clock::get()?.unix_timestamp;
         lending_pool.active = true;
+
+        // Le mint YT est automatiquement initialisé par Anchor grâce aux attributs mint::
         Ok(())
     }
 
@@ -79,10 +82,10 @@ pub mod lending {
         user_deposit.last_yield_calculation = current_time;
 
         // Mint des Yield Tokens équivalents au montant déposé
-        let pool_key = pool.key();
+        let pool_owner = pool.owner;
         let mint_seeds = &[
             b"authority",
-            pool_key.as_ref(),
+            pool_owner.as_ref(),
             &[ctx.bumps.pool_authority],
         ];
         let mint_signer = &[&mint_seeds[..]];
@@ -127,10 +130,10 @@ pub mod lending {
         }
 
         // Transfert depuis le vault vers l'utilisateur
-        let pool_key = ctx.accounts.pool.key();
+        let pool_owner = ctx.accounts.pool.owner;
         let authority_seeds = &[
             b"authority",
-            pool_key.as_ref(),
+            pool_owner.as_ref(),
             &[ctx.bumps.pool_authority],
         ];
         let signer_seeds = [&authority_seeds[..]];
@@ -204,10 +207,10 @@ pub mod lending {
         };
 
         // Génère les seeds pour la PDA d'autorité du mint
-        let pool_key = ctx.accounts.pool.key();
+        let pool_owner = ctx.accounts.pool.owner;
         let seeds = &[
             b"authority",
-            pool_key.as_ref(),
+            pool_owner.as_ref(),
             &[ctx.bumps.mint_authority],
         ];
         let signer = &[&seeds[..]];
@@ -289,10 +292,10 @@ pub mod lending {
             .ok_or(ErrorCode::CalculationError)?;
 
         // Transfert du vault vers l'utilisateur
-        let pool_key = ctx.accounts.pool.key();
+        let pool_owner = ctx.accounts.pool.owner;
         let authority_seeds = &[
             b"authority",
-            pool_key.as_ref(),
+            pool_owner.as_ref(),
             &[ctx.bumps.pool_authority],
         ];
         let signer_seeds = [&authority_seeds[..]];
@@ -366,13 +369,33 @@ pub struct InitializeLendingPool<'info> {
         payer = creator,
         seeds = [b"lending_pool", creator.key().as_ref()],
         bump,
-        space = Pool::INIT_SPACE
+        space = 8 + Pool::INIT_SPACE
     )]
     pub pool: Account<'info, Pool>,
 
     #[account(mut)]
     pub vault_account: Account<'info, TokenAccount>,
 
+    /// Mint YT (Yield Token) - PDA séparé utilisant creator.key() pour éviter la dépendance circulaire
+    #[account(
+        init,
+        payer = creator,
+        seeds = [b"yt_mint", creator.key().as_ref()],
+        bump,
+        mint::decimals = 6,
+        mint::authority = pool_authority,
+        mint::freeze_authority = pool_authority,
+    )]
+    pub yt_mint: Account<'info, Mint>,
+
+    /// CHECK: Cette PDA est utilisée comme autorité du mint YT
+    #[account(
+        seeds = [b"authority", creator.key().as_ref()],
+        bump
+    )]
+    pub pool_authority: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -397,7 +420,7 @@ pub struct InitializeUserDeposit<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.key().as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -425,7 +448,7 @@ pub struct Deposit<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.key().as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -439,12 +462,16 @@ pub struct Deposit<'info> {
     #[account(mut)]
     pub vault_account: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"yt_mint", pool.owner.as_ref()],
+        bump
+    )]
     pub yt_mint: Account<'info, Mint>,
 
     /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
     #[account(
-        seeds = [b"authority", pool.key().as_ref()],
+        seeds = [b"authority", pool.owner.as_ref()],
         bump
     )]
     pub pool_authority: UncheckedAccount<'info>,
@@ -472,7 +499,7 @@ pub struct Withdraw<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.key().as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -486,12 +513,16 @@ pub struct Withdraw<'info> {
     #[account(mut)]
     pub vault_account: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"yt_mint", pool.owner.as_ref()],
+        bump
+    )]
     pub yt_mint: Account<'info, Mint>,
 
     /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
     #[account(
-        seeds = [b"authority", pool.key().as_ref()],
+        seeds = [b"authority", pool.owner.as_ref()],
         bump
     )]
     pub pool_authority: UncheckedAccount<'info>,
@@ -516,7 +547,7 @@ pub struct GetUserBalance<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.key().as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -548,7 +579,7 @@ pub struct CalculatePendingYield<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.key().as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -588,12 +619,13 @@ pub struct Pool {
     pub total_deposits: u64,
     pub total_yield_distributed: u64,
     pub vault_account: Pubkey,
+    pub yt_mint: Pubkey, // Ajout du champ pour le mint YT
     pub created_at: i64,
     pub active: bool,
 }
 
 impl Pool {
-    pub const INIT_SPACE: usize = 8 + 32 + 8 + 8 + 32 + 8 + 1;
+    pub const INIT_SPACE: usize = 8 + 32 + 8 + 8 + 32 + 32 + 8 + 1; // +32 pour yt_mint
 }
 
 #[account]
@@ -656,13 +688,17 @@ pub struct MintYieldToken<'info> {
     pub pool: Account<'info, Pool>,
 
     // Compte représentant le mint des Yield Tokens
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"yt_mint", pool.owner.as_ref()],
+        bump
+    )]
     pub yt_mint: Account<'info, Mint>,
 
     // Autorité qui a le droit de mint (PDA)
     /// CHECK: Ce compte est une PDA utilisée uniquement comme signer
     #[account(
-        seeds = [b"authority", pool.key().as_ref()],
+        seeds = [b"authority", pool.owner.as_ref()],
         bump
     )]
     pub mint_authority: UncheckedAccount<'info>,
@@ -697,12 +733,16 @@ pub struct Redeem<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.key().as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"yt_mint", pool.owner.as_ref()],
+        bump
+    )]
     pub yt_mint: Account<'info, Mint>,
 
     #[account(mut)]
@@ -716,7 +756,7 @@ pub struct Redeem<'info> {
 
     /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
     #[account(
-        seeds = [b"authority", pool.key().as_ref()],
+        seeds = [b"authority", pool.owner.as_ref()],
         bump
     )]
     pub pool_authority: UncheckedAccount<'info>,

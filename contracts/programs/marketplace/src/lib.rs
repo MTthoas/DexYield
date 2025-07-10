@@ -1,8 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Transfer, transfer, Mint};
-use lending;
 
-declare_id!("8dHymaYqqKuydLPRAZBbAkzDRh1FqNfQw1SRgEjN9noy");
+// Import correct du programme lending
+extern crate lending;
+use lending::{Pool, UserDeposit};
+
+declare_id!("Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv");
 
 #[program]
 pub mod marketplace {
@@ -140,10 +143,10 @@ pub mod marketplace {
             / (365 * 24 * 3600 * 10000);
 
         // Transfert du YT depuis le vault vers l'utilisateur
-        let pool_key = ctx.accounts.pool.key();
+        let pool_owner = ctx.accounts.pool.owner;
         let signer_seeds: &[&[u8]] = &[
             b"authority",
-            pool_key.as_ref(),
+            pool_owner.as_ref(),
             &[ctx.bumps.pool_authority],
         ];
         let signer: &[&[&[u8]]] = &[signer_seeds];
@@ -226,18 +229,19 @@ pub struct BuyYT<'info> {
     pub escrow_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
-    pub pool: Account<'info, lending::Pool>,
+    pub pool: Account<'info, Pool>,
 
     #[account(mut)]
     pub yt_mint: Account<'info, Mint>,
 
     /// CHECK: PDA utilisée uniquement comme signer
-    #[account(seeds = [b"authority", pool.key().as_ref()], bump)]
+    #[account(seeds = [b"authority", pool.owner.as_ref()], bump)]
     pub pool_authority: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
 
-    pub lending_program: Program<'info, lending::program::Lending>,
+    /// CHECK: Programme lending référencé
+    pub lending_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -289,14 +293,14 @@ pub struct Redeem<'info> {
         seeds = [b"lending_pool", pool.owner.as_ref()],
         bump
     )]
-    pub pool: Account<'info, lending::Pool>,
+    pub pool: Account<'info, Pool>,
 
     #[account(
         mut,
-        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref()],
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
         bump
     )]
-    pub user_deposit: Account<'info, lending::UserDeposit>,
+    pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
         seeds = [b"strategy", yt_mint.key().as_ref()],
@@ -318,7 +322,7 @@ pub struct Redeem<'info> {
 
     /// CHECK: Cette PDA est utilisée uniquement comme signer du vault
     #[account(
-        seeds = [b"authority", pool.key().as_ref()],
+        seeds = [b"authority", pool.owner.as_ref()],
         bump
     )]
     pub pool_authority: UncheckedAccount<'info>,

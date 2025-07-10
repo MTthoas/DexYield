@@ -1,6 +1,5 @@
 {
   "license": "ISC",
-  "type": "module",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
@@ -10,6 +9,10 @@
     "test:marketplace": "anchor test --skip-local-validator tests/marketDex.ts",
     "build": "anchor build",
     "deploy": "anchor deploy",
+    "setup": "ts-node -r tsconfig-paths/register scripts/setup.ts",
+    "setup-working": "node scripts/setup-working.js",
+    "test-deposit": "node scripts/test-deposit.js",
+    "test-pda": "node scripts/test-pda.js",
     "start-validator": "solana-test-validator --reset",
     "logs": "solana logs"
   },
@@ -30,6 +33,7 @@
     "prettier": "^2.6.2",
     "ts-mocha": "^10.0.0",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3"
   }
 }
