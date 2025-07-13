@@ -255,11 +255,78 @@ export const useLendingSimplified = () => {
     }
   }, [contractService, publicKey]);
 
+  const redeem = useCallback(async (
+    tokenMint: PublicKey,
+    ytAmount: number,
+    poolOwner: PublicKey = DEFAULT_POOL_OWNER
+  ) => {
+    if (!contractService || !publicKey) {
+      throw new Error('Wallet not connected or contract service not available');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🚀 Starting simplified redeem...');
+      console.log('Token mint:', tokenMint.toString());
+      console.log('YT Amount:', ytAmount);
+      console.log('Pool owner:', poolOwner.toString());
+
+      // Build tous les comptes nécessaires
+      const accounts = await contractService.buildLendingAccounts(
+        publicKey,
+        poolOwner,
+        tokenMint
+      );
+
+      console.log('📋 Built accounts for redeem:', {
+        poolPDA: accounts.poolPDA.toString(),
+        strategyPDA: accounts.strategyPDA.toString(),
+        userDepositPDA: accounts.userDepositPDA.toString(),
+        ytMintPDA: accounts.ytMintPDA.toString(),
+        userTokenAccount: accounts.userTokenAccount.toString(),
+        userYtAccount: accounts.userYtAccount.toString(),
+        vaultAccount: accounts.vaultAccount.toString(),
+      });
+
+      // Convertir les Ytoken en décimales
+      const decimals = tokenMint.equals(USDC_MINT) ? TOKEN_DECIMALS.USDC : TOKEN_DECIMALS.SOL;
+      const ytAmountBN = Math.floor(ytAmount * Math.pow(10, decimals));
+
+      console.log('💰 YT Amount with decimals:', ytAmountBN);
+
+      // Appel de la redeem
+      const txId = await contractService.redeem(
+        publicKey,
+        poolOwner,
+        accounts.strategyPDA,
+        ytAmountBN,
+        accounts.ytMintPDA,
+        accounts.userYtAccount,
+        accounts.userTokenAccount, // pour récupérer les tokens
+        accounts.vaultAccount
+      );
+
+      console.log('✅ Redeem successful! TX:', txId);
+      return txId;
+
+    } catch (err) {
+      console.error('❌ Redeem failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [contractService, publicKey]);
+
   return {
     loading,
     error,
     deposit,
     withdraw,
+    redeem,
     initializeStrategy,
     initializeLendingPool,
   };

@@ -144,6 +144,7 @@ export default function LendingPage() {
   const { 
     deposit, 
     withdraw, 
+    redeem,
     initializeStrategy,
     initializeLendingPool 
   } = useLendingSimplified();
@@ -322,8 +323,42 @@ export default function LendingPage() {
   };
 
   const handleRedeem = async (poolId: string) => {
-    // TODO: Implémenter la fonction redeem dans les hooks
-    toast.info('Redeem functionality coming soon');
+    if (!connected || !publicKey) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    try {
+      const strategy = strategies.find(s => s.id === poolId);
+      if (!strategy) throw new Error('Strategy not found');
+
+      const pool = pools.find(p => p.id === poolId);
+      if (!pool || !pool.userDeposit || pool.userDeposit <= 0) {
+        toast.error('No deposits found to redeem');
+        return;
+      }
+
+      // Récupérer le solde yield du user en respectant le ratio 1:1
+      const userYTBalance = pool.userYieldEarned || 0;
+      if (userYTBalance <= 0) {
+        toast.error('No yield tokens to redeem');
+        return;
+      }
+
+      const tokenMint = new PublicKey(strategy.tokenAddress);
+      
+      // Appel de la redeem 
+      await redeem(tokenMint, userYTBalance);
+      
+      toast.success(`Successfully redeemed ${userYTBalance.toFixed(6)} ${strategy.tokenSymbol} yield tokens`);
+      
+      // Recharger les données
+      await loadPoolsData();
+      await loadUserBalances();
+    } catch (error) {
+      console.error('Redeem error:', error);
+      toast.error('Redeem failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   };
 
   // Calculer les statistiques globales
