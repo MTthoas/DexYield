@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LendingIndexRouteImport } from './routes/lending/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as ExploreHomeIndexRouteImport } from './routes/explore/home/index'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const LendingIndexRoute = LendingIndexRouteImport.update({
   path: '/lending/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExploreHomeIndexRoute = ExploreHomeIndexRouteImport.update({
   id: '/explore/home/',
   path: '/explore/home/',
@@ -31,30 +37,34 @@ const ExploreHomeIndexRoute = ExploreHomeIndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminIndexRoute
   '/lending': typeof LendingIndexRoute
   '/explore/home': typeof ExploreHomeIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminIndexRoute
   '/lending': typeof LendingIndexRoute
   '/explore/home': typeof ExploreHomeIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin/': typeof AdminIndexRoute
   '/lending/': typeof LendingIndexRoute
   '/explore/home/': typeof ExploreHomeIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/lending' | '/explore/home'
+  fullPaths: '/' | '/admin' | '/lending' | '/explore/home'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lending' | '/explore/home'
-  id: '__root__' | '/' | '/lending/' | '/explore/home/'
+  to: '/' | '/admin' | '/lending' | '/explore/home'
+  id: '__root__' | '/' | '/admin/' | '/lending/' | '/explore/home/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminIndexRoute: typeof AdminIndexRoute
   LendingIndexRoute: typeof LendingIndexRoute
   ExploreHomeIndexRoute: typeof ExploreHomeIndexRoute
 }
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LendingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/explore/home/': {
       id: '/explore/home/'
       path: '/explore/home'
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminIndexRoute: AdminIndexRoute,
   LendingIndexRoute: LendingIndexRoute,
   ExploreHomeIndexRoute: ExploreHomeIndexRoute,
 }
