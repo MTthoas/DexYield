@@ -30,7 +30,7 @@ export default function Header() {
         const elementBelow = document.elementFromPoint(point.x, point.y);
 
         if (elementBelow) {
-          let currentElement = elementBelow;
+          let currentElement: Element | null = elementBelow;
           let backgroundColor = "transparent";
 
           // Remonter dans l'arbre DOM pour trouver un élément avec une couleur de fond
@@ -164,20 +164,6 @@ export default function Header() {
               <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 group-hover:w-full transition-all duration-300"></span>
             </Link>
           )}
-          <Link
-            to="/explore/home"
-            className={`text-sm font-medium ${textColorSecondaryClass} ${hoverTextColorClass} transition-colors relative group`}
-          >
-            Portfolio
-            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 group-hover:w-full transition-all duration-300"></span>
-          </Link>
-          <Link
-            to="/"
-            className={`text-sm font-medium ${textColorSecondaryClass} ${hoverTextColorClass} transition-colors relative group`}
-          >
-            Docs
-            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 group-hover:w-full transition-all duration-300"></span>
-          </Link>
         </nav>
         <div className="flex items-center gap-4">
           <a
