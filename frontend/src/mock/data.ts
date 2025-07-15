@@ -135,7 +135,7 @@ export const mockStrategies: MockStrategy[] = [
     name: "SOL Aggressive Growth",
     description: "Stratégie SOL à haut rendement - risque élevé",
     createdAt: 1703635200,
-    active: true, // Changer en active pour avoir 5 pools visibles
+    active: false,
     totalDeposited: 75000000000, // 75 SOL en lamports
     tokenSymbol: "SOL"
   }
