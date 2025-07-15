@@ -8,34 +8,66 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as LendingIndexRouteImport } from './routes/lending/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as ExploreHomeIndexRouteImport } from './routes/explore/home/index'
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as IndexImport } from './routes/index'
-import { Route as LendingIndexImport } from './routes/lending/index'
-import { Route as ExploreHomeIndexImport } from './routes/explore/home/index'
-
-// Create/Update Routes
-
-const IndexRoute = IndexImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const LendingIndexRoute = LendingIndexImport.update({
+const LendingIndexRoute = LendingIndexRouteImport.update({
   id: '/lending/',
   path: '/lending/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const ExploreHomeIndexRoute = ExploreHomeIndexImport.update({
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreHomeIndexRoute = ExploreHomeIndexRouteImport.update({
   id: '/explore/home/',
   path: '/explore/home/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
 
-// Populate the FileRoutesByPath interface
+export interface FileRoutesByFullPath {
+  '/': typeof IndexRoute
+  '/admin': typeof AdminIndexRoute
+  '/lending': typeof LendingIndexRoute
+  '/explore/home': typeof ExploreHomeIndexRoute
+}
+export interface FileRoutesByTo {
+  '/': typeof IndexRoute
+  '/admin': typeof AdminIndexRoute
+  '/lending': typeof LendingIndexRoute
+  '/explore/home': typeof ExploreHomeIndexRoute
+}
+export interface FileRoutesById {
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/admin/': typeof AdminIndexRoute
+  '/lending/': typeof LendingIndexRoute
+  '/explore/home/': typeof ExploreHomeIndexRoute
+}
+export interface FileRouteTypes {
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths: '/' | '/admin' | '/lending' | '/explore/home'
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/admin' | '/lending' | '/explore/home'
+  id: '__root__' | '/' | '/admin/' | '/lending/' | '/explore/home/'
+  fileRoutesById: FileRoutesById
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  LendingIndexRoute: typeof LendingIndexRoute
+  ExploreHomeIndexRoute: typeof ExploreHomeIndexRoute
+}
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
@@ -43,92 +75,39 @@ declare module '@tanstack/react-router' {
       id: '/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/lending/': {
       id: '/lending/'
       path: '/lending'
       fullPath: '/lending'
-      preLoaderRoute: typeof LendingIndexImport
-      parentRoute: typeof rootRoute
+      preLoaderRoute: typeof LendingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/explore/home/': {
       id: '/explore/home/'
       path: '/explore/home'
       fullPath: '/explore/home'
-      preLoaderRoute: typeof ExploreHomeIndexImport
-      parentRoute: typeof rootRoute
+      preLoaderRoute: typeof ExploreHomeIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
-}
-
-// Create and export the route tree
-
-export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/lending': typeof LendingIndexRoute
-  '/explore/home': typeof ExploreHomeIndexRoute
-}
-
-export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/lending': typeof LendingIndexRoute
-  '/explore/home': typeof ExploreHomeIndexRoute
-}
-
-export interface FileRoutesById {
-  __root__: typeof rootRoute
-  '/': typeof IndexRoute
-  '/lending/': typeof LendingIndexRoute
-  '/explore/home/': typeof ExploreHomeIndexRoute
-}
-
-export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/lending' | '/explore/home'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lending' | '/explore/home'
-  id: '__root__' | '/' | '/lending/' | '/explore/home/'
-  fileRoutesById: FileRoutesById
-}
-
-export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  LendingIndexRoute: typeof LendingIndexRoute
-  ExploreHomeIndexRoute: typeof ExploreHomeIndexRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminIndexRoute: AdminIndexRoute,
   LendingIndexRoute: LendingIndexRoute,
   ExploreHomeIndexRoute: ExploreHomeIndexRoute,
 }
-
-export const routeTree = rootRoute
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-/* ROUTE_MANIFEST_START
-{
-  "routes": {
-    "__root__": {
-      "filePath": "__root.tsx",
-      "children": [
-        "/",
-        "/lending/",
-        "/explore/home/"
-      ]
-    },
-    "/": {
-      "filePath": "index.tsx"
-    },
-    "/lending/": {
-      "filePath": "lending/index.tsx"
-    },
-    "/explore/home/": {
-      "filePath": "explore/home/index.tsx"
-    }
-  }
-}
-ROUTE_MANIFEST_END */

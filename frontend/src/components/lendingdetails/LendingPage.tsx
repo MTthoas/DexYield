@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,18 +10,49 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TrendingUp, Coins, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { TrendingUp, Coins, ArrowUpRight, ArrowDownLeft, Loader2, AlertCircle, Search, Filter } from "lucide-react";
+import { PublicKey } from "@solana/web3.js";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useLending } from "@/hooks/useLending";
+import { useLendingSimplified } from "@/hooks/useLendingSimplified";
+import { LendingPoolCard } from "./LendingPoolCard";
+import { TOKEN_SYMBOLS, TOKEN_DECIMALS } from "@/lib/constants";
+// Simple toast utility
+const toast = {
+  success: (message: string) => {
+    console.log("✅ Success:", message);
+    alert(`Success: ${message}`);
+  },
+  error: (message: string) => {
+    console.error("❌ Error:", message);
+    alert(`Error: ${message}`);
+  },
+  info: (message: string) => {
+    console.info("ℹ️ Info:", message);
+    alert(`Info: ${message}`);
+  }
+};
 
 // Types basés sur le smart contract
 interface LendingPool {
   id: string;
-  owner: string;
+  name: string;
+  token: {
+    symbol: string;
+    mint: string;
+    decimals: number;
+    icon?: string;
+  };
+  apy: number;
+  tvl: number;
   totalDeposits: number;
   totalYieldDistributed: number;
-  vaultAccount: string;
-  createdAt: number;
-  active: boolean;
-  strategy: Strategy;
+  userDeposit?: number;
+  userYieldEarned?: number;
+  isActive: boolean;
+  description: string;
+  riskLevel: 'Low' | 'Medium' | 'High';
+  createdAt: string;
 }
 
 interface Strategy {
@@ -36,119 +67,304 @@ interface Strategy {
   tokenSymbol: string;
 }
 
-// Données mock basées sur le smart contract
-const mockStrategies: Strategy[] = [
-  {
-    id: "1",
-    tokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    rewardApy: 8500, // 8.5%
-    name: "USDC Yield Strategy",
-    description:
-      "Stable yield farming strategy for USDC with low risk and consistent returns",
-    createdAt: Date.now() - 86400000 * 30,
-    active: true,
-    totalDeposited: 2500000,
-    tokenSymbol: "USDC",
-  },
-  {
-    id: "2",
-    tokenAddress: "So11111111111111111111111111111111111111112",
-    rewardApy: 12000, // 12%
-    name: "SOL Staking Strategy",
-    description: "High-yield SOL staking strategy with automated compounding",
-    createdAt: Date.now() - 86400000 * 15,
-    active: true,
-    totalDeposited: 890000,
-    tokenSymbol: "SOL",
-  },
-  {
-    id: "3",
-    tokenAddress: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
-    rewardApy: 15500, // 15.5%
-    name: "mSOL Liquidity Pool",
-    description: "Premium liquid staking strategy with mSOL tokens",
-    createdAt: Date.now() - 86400000 * 7,
-    active: true,
-    totalDeposited: 1200000,
-    tokenSymbol: "mSOL",
-  },
-];
+interface PoolFilters {
+  search: string;
+  sortBy: 'apy' | 'tvl' | 'newest';
+  riskLevel: 'all' | 'Low' | 'Medium' | 'High';
+  activeOnly: boolean;
+}
 
-const mockPools: LendingPool[] = mockStrategies.map((strategy) => ({
-  id: strategy.id,
-  owner: "BZUEgp9psZegJarKqAH5WC6HSYCQ4fY2XphuCd5RsyeF",
-  totalDeposits: strategy.totalDeposited,
-  totalYieldDistributed: Math.floor(
-    strategy.totalDeposited * (strategy.rewardApy / 10000) * 0.3
-  ),
-  vaultAccount: `vault_${strategy.id}`,
-  createdAt: strategy.createdAt,
-  active: strategy.active,
-  strategy,
+// Mapping des tokens à partir des constantes
+const TOKENS = Object.entries(TOKEN_SYMBOLS).map(([mint, symbol]) => ({
+  mint,
+  symbol,
+  decimals: TOKEN_DECIMALS[symbol] || 6
 }));
 
-export default function LendingPage() {
-  const [selectedPool, setSelectedPool] = useState<LendingPool | null>(null);
-  const [actionType, setActionType] = useState<"deposit" | "withdraw" | null>(
-    null
-  );
-  const [amount, setAmount] = useState("");
-
-  // Mock user balance pour le withdraw
-  const getUserBalance = (poolId: string) => {
-    // Simulation d'un balance utilisateur
-    const mockBalances: Record<string, number> = {
-      "1": 5000, // USDC
-      "2": 2.5, // SOL
-      "3": 1.2, // mSOL
+// Convertir les stratégies en pools avec données réalistes
+// Correction du mapping des stratégies : conversion BN -> number et usage de tokenAddress
+const getPubkeyString = (val: any) => {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val.toBase58 === 'function') return val.toBase58();
+  return String(val);
+};
+const getBNNumber = (val: any) => {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val.toNumber === 'function') return val.toNumber();
+  return Number(val);
+};
+const createPoolsFromStrategies = (strategies: Strategy[], userDeposits?: any[]): LendingPool[] => {
+  return strategies.map((strategy) => {
+    const tokenAddressStr = getPubkeyString(strategy.tokenAddress);
+    const tokenConfig = TOKENS.find(t => t.mint === tokenAddressStr);
+    const userDeposit = userDeposits?.find(d => d.strategy === strategy.id);
+    // Conversion des champs BN en nombre natif
+    const rewardApy = getBNNumber(strategy.rewardApy);
+    const totalDeposited = getBNNumber(strategy.totalDeposited);
+    const createdAt = getBNNumber(strategy.createdAt);
+    // Calcul TVL basé sur les dépôts totaux avec prix fictifs
+    const tokenPrice = strategy.tokenSymbol === 'USDC' ? 1 : 
+                      strategy.tokenSymbol === 'SOL' ? 100 : 
+                      strategy.tokenSymbol === 'mSOL' ? 110 : 1;
+    const tvl = (totalDeposited / Math.pow(10, tokenConfig?.decimals || 6)) * tokenPrice;
+    return {
+      id: strategy.id,
+      name: strategy.name,
+      token: {
+        symbol: strategy.tokenSymbol,
+        mint: tokenAddressStr,
+        decimals: tokenConfig?.decimals || 6,
+        icon: `/images/tokens/${strategy.tokenSymbol?.toLowerCase?.()}.png`
+      },
+      apy: rewardApy / 100, // Convertir basis points en pourcentage
+      tvl: tvl,
+      totalDeposits: totalDeposited / Math.pow(10, tokenConfig?.decimals || 6),
+      totalYieldDistributed: totalDeposited * (rewardApy / 10000) * 0.1 / Math.pow(10, tokenConfig?.decimals || 6),
+      userDeposit: userDeposit ? getBNNumber(userDeposit.amount) / Math.pow(10, tokenConfig?.decimals || 6) : undefined,
+      userYieldEarned: userDeposit ? getBNNumber(userDeposit.yieldEarned) / Math.pow(10, tokenConfig?.decimals || 6) : undefined,
+      isActive: strategy.active,
+      description: strategy.description,
+      riskLevel: strategy.tokenSymbol === 'USDC' ? 'Low' : 
+                strategy.tokenSymbol === 'SOL' ? 'Medium' : 'High',
+      createdAt: new Date(createdAt * 1000).toISOString() // timestamp unix -> ISO
     };
-    return mockBalances[poolId] || 0;
-  };
+  });
+};
 
-  const formatCurrency = (amount: number, symbol: string = "USDC") => {
-    return `${amount.toLocaleString()} ${symbol}`;
-  };
+export default function LendingPage() {
+  const { connected, publicKey } = useWallet();
+  const { 
+    fetchStrategies, 
+    getUserTokenBalance, 
+    getUserDeposit,
+    loading 
+  } = useLending();
+  const { 
+    deposit, 
+    withdraw, 
+    redeem,
+    initializeStrategy,
+    initializeLendingPool 
+  } = useLendingSimplified();
 
-  const formatApy = (apy: number) => {
-    return `${(apy / 100).toFixed(2)}%`;
-  };
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [pools, setPools] = useState<LendingPool[]>([]);
+  const [userTokenBalances, setUserTokenBalances] = useState<Record<string, number>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [filters, setFilters] = useState<PoolFilters>({
+    search: '',
+    sortBy: 'apy',
+    riskLevel: 'all',
+    activeOnly: true
+  });
 
-  const handleDeposit = () => {
-    if (!selectedPool || !amount) return;
-    console.log(
-      `Depositing ${amount} ${selectedPool.strategy.tokenSymbol} to pool ${selectedPool.id}`
-    );
-    // Ici, vous intégreriez l'appel au smart contract
-    setAmount("");
-    setActionType(null);
-  };
+  // Charger les stratégies et pools
+  const loadPoolsData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Récupérer les stratégies depuis le smart contract
+      const strategiesDataRaw = await fetchStrategies();
+      console.log('Fetched strategies:', strategiesDataRaw);
+      const strategiesData = Array.isArray(strategiesDataRaw) ? strategiesDataRaw : [];
+      console.log('Strategies loaded:', strategiesData);
+      if (strategiesData.length > 0) {
+        setStrategies(strategiesData);
+        // Récupérer les dépôts utilisateur si connecté
+        let userDeposits: any[] = [];
+        if (connected && publicKey) {
+          try {
+            userDeposits = await Promise.all(
+              strategiesData.map(async (strategy) => {
+                try {
+                  const depositRaw = await getUserDeposit(publicKey, strategy.id);
+                  if (depositRaw && typeof depositRaw === 'object' && typeof depositRaw.amount === 'number') {
+                    return {
+                      amount: Number(depositRaw.amount) || 0,
+                      yieldEarned: Number(depositRaw.yieldEarned) || 0,
+                      strategy: strategy.id
+                    };
+                  }
+                  return null;
+                } catch {
+                  return null;
+                }
+              })
+            );
+            userDeposits = userDeposits.filter(Boolean);
+          } catch (error) {
+            console.log('Error fetching user deposits:', error);
+          }
+        }
+        // Création des pools à partir des stratégies et dépôts utilisateur
+        const poolsData = createPoolsFromStrategies(strategiesData, userDeposits);
+        setPools(poolsData);
+      } else {
+        // Si aucune stratégie trouvée, on ne montre rien
+        setStrategies([]);
+        setPools([]);
+      }
+    } catch (error) {
+      console.error('Error loading pools data:', error);
+      toast.error('Failed to load pools data');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchStrategies, getUserDeposit, connected, publicKey]);
 
-  const handleWithdraw = () => {
-    if (!selectedPool || !amount) return;
-    console.log(
-      `Withdrawing ${amount} ${selectedPool.strategy.tokenSymbol} from pool ${selectedPool.id}`
-    );
-    // Ici, vous intégreriez l'appel au smart contract
-    setAmount("");
-    setActionType(null);
-  };
+  // Charger les balances utilisateur
+  const loadUserBalances = useCallback(async () => {
+    if (!connected || !publicKey) return;
+    const balances: Record<string, number> = {};
+    for (const strategy of strategies) {
+      try {
+        const mintStr = new PublicKey(strategy.tokenAddress).toString();
+        console.log('Appel getUserTokenBalance pour', mintStr);
+        const balanceRaw = await getUserTokenBalance(new PublicKey(strategy.tokenAddress));
+        const balance =
+          typeof balanceRaw === 'bigint'
+            ? Number(balanceRaw)
+            : (typeof balanceRaw === 'number' && !isNaN(balanceRaw) ? balanceRaw : 0);
+        balances[mintStr] = balance;
+        console.log('Solde trouvé pour', mintStr, ':', balance);
+      } catch (error) {
+        console.log(`Error getting balance for ${strategy.tokenSymbol}:`, error);
+        balances[new PublicKey(strategy.tokenAddress).toString()] = 0;
+      }
+    }
+    console.log('userTokenBalances:', balances);
+    setUserTokenBalances(balances);
+  }, [connected, publicKey, strategies, getUserTokenBalance]);
 
-  const handleSetMaxAmount = () => {
-    if (!selectedPool) return;
+  useEffect(() => {
+    loadPoolsData();
+  }, [loadPoolsData]);
 
-    if (actionType === "withdraw") {
-      const userBalance = getUserBalance(selectedPool.id);
-      setAmount(userBalance.toString());
-    } else if (actionType === "deposit") {
-      // Pour le deposit, on peut simuler un wallet balance
-      setAmount("1000"); // Exemple de montant max
+  useEffect(() => {
+    if (strategies.length > 0) {
+      loadUserBalances();
+    }
+  }, [loadUserBalances, strategies]);
+
+  // Filtrage et tri des pools
+  const filteredPools = pools
+    .filter(pool => {
+      if (filters.search && !pool.name.toLowerCase().includes(filters.search.toLowerCase()) && 
+          !pool.token.symbol.toLowerCase().includes(filters.search.toLowerCase())) {
+        return false;
+      }
+      if (filters.riskLevel !== 'all' && pool.riskLevel !== filters.riskLevel) {
+        return false;
+      }
+      if (filters.activeOnly && !pool.isActive) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'apy':
+          return b.apy - a.apy;
+        case 'tvl':
+          return b.tvl - a.tvl;
+        case 'newest':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        default:
+          return 0;
+      }
+    });
+
+  // Handlers pour les actions des pools
+  const handleDeposit = async (poolId: string, amount: number) => {
+    if (!connected || !publicKey) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    try {
+      const strategy = strategies.find(s => s.id === poolId);
+      if (!strategy) throw new Error('Strategy not found');
+
+      const tokenMint = new PublicKey(strategy.tokenAddress);
+      await deposit(tokenMint, amount);
+      toast.success(`Successfully deposited ${amount} ${strategy.tokenSymbol}`);
+      
+      // Recharger les données
+      await loadPoolsData();
+      await loadUserBalances();
+    } catch (error) {
+      console.error('Deposit error:', error);
+      toast.error('Deposit failed');
     }
   };
 
-  const closeActionModal = () => {
-    setActionType(null);
-    setAmount("");
+  const handleWithdraw = async (poolId: string, amount: number) => {
+    if (!connected || !publicKey) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    try {
+      const strategy = strategies.find(s => s.id === poolId);
+      if (!strategy) throw new Error('Strategy not found');
+
+      const tokenMint = new PublicKey(strategy.tokenAddress);
+      await withdraw(tokenMint, amount);
+      toast.success(`Successfully withdrew ${amount} ${strategy.tokenSymbol}`);
+      
+      // Recharger les données
+      await loadPoolsData();
+      await loadUserBalances();
+    } catch (error) {
+      console.error('Withdraw error:', error);
+      toast.error('Withdraw failed');
+    }
   };
+
+  const handleRedeem = async (poolId: string) => {
+    if (!connected || !publicKey) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    try {
+      const strategy = strategies.find(s => s.id === poolId);
+      if (!strategy) throw new Error('Strategy not found');
+
+      const pool = pools.find(p => p.id === poolId);
+      if (!pool || !pool.userDeposit || pool.userDeposit <= 0) {
+        toast.error('No deposits found to redeem');
+        return;
+      }
+
+      // Récupérer le solde yield du user en respectant le ratio 1:1
+      const userYTBalance = pool.userYieldEarned || 0;
+      if (userYTBalance <= 0) {
+        toast.error('No yield tokens to redeem');
+        return;
+      }
+
+      const tokenMint = new PublicKey(strategy.tokenAddress);
+      
+      // Appel de la redeem 
+      await redeem(tokenMint, userYTBalance);
+      
+      toast.success(`Successfully redeemed ${userYTBalance.toFixed(6)} ${strategy.tokenSymbol} yield tokens`);
+      
+      // Recharger les données
+      await loadPoolsData();
+      await loadUserBalances();
+    } catch (error) {
+      console.error('Redeem error:', error);
+      toast.error('Redeem failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Calculer les statistiques globales
+  const totalTVL = pools.reduce((sum, pool) => sum + (pool.tvl || 0), 0);
+  const averageAPY = pools.length > 0 ? pools.reduce((sum, pool) => sum + (pool.apy || 0), 0) / pools.length : 0;
+  const activePoolsCount = pools.filter(pool => pool.isActive).length;
 
   return (
     <div className="min-h-screen bg-black text-white relative overflow-hidden pt-20">
@@ -169,489 +385,137 @@ export default function LendingPage() {
               Solana Lending Pools
             </h1>
             <p className="text-xl text-white/70 max-w-2xl mx-auto">
-              Earn yield on your crypto assets through our secure and automated
-              lending strategies
+              Earn yield on your crypto assets through our secure and automated lending strategies
             </p>
           </div>
         </section>
 
-        <div className="w-full px-[5%] lg:px-[8%] xl:px-[12%] py-8">
-          {/* Stats Cards */}
+        {/* Stats Section */}
+        <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] py-16">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <Card className="bg-white/5 backdrop-blur-sm border-white/10 text-white">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-white/90">
-                  Total Value Locked
-                </CardTitle>
-                <Coins className="h-4 w-4 text-cyan-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-white">
-                  $
-                  {mockPools
-                    .reduce((sum, pool) => sum + pool.totalDeposits, 0)
-                    .toLocaleString()}
+            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300">
+              <CardContent className="p-8 text-center">
+                <div className="text-4xl font-bold text-green-400 mb-2">
+                  ${totalTVL.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
-                <p className="text-xs text-white/60">
-                  Across {mockPools.filter((p) => p.active).length} active pools
-                </p>
+                <div className="text-white/60 text-sm font-medium">Total Value Locked</div>
               </CardContent>
             </Card>
-
-            <Card className="bg-white/5 backdrop-blur-sm border-white/10 text-white">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-white/90">
-                  Average APY
-                </CardTitle>
-                <TrendingUp className="h-4 w-4 text-green-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-white">
-                  {formatApy(
-                    mockPools.reduce(
-                      (sum, pool) => sum + pool.strategy.rewardApy,
-                      0
-                    ) / mockPools.length
-                  )}
+            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300">
+              <CardContent className="p-8 text-center">
+                <div className="text-4xl font-bold text-blue-400 mb-2">
+                  {(averageAPY || 0).toFixed(1)}%
                 </div>
-                <p className="text-xs text-white/60">
-                  Weighted average across all strategies
-                </p>
+                <div className="text-white/60 text-sm font-medium">Average APY</div>
               </CardContent>
             </Card>
-
-            <Card className="bg-white/5 backdrop-blur-sm border-white/10 text-white">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-white/90">
-                  Total Yield Distributed
-                </CardTitle>
-                <ArrowUpRight className="h-4 w-4 text-blue-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-white">
-                  $
-                  {mockPools
-                    .reduce((sum, pool) => sum + pool.totalYieldDistributed, 0)
-                    .toLocaleString()}
+            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300">
+              <CardContent className="p-8 text-center">
+                <div className="text-4xl font-bold text-purple-400 mb-2">
+                  {activePoolsCount}
                 </div>
-                <p className="text-xs text-white/60">
-                  Lifetime rewards to users
-                </p>
+                <div className="text-white/60 text-sm font-medium">Active Pools</div>
               </CardContent>
             </Card>
           </div>
+        </section>
 
-          {/* Lending Pools Table */}
-          <Card className="bg-white/5 backdrop-blur-sm border-white/10 text-white">
-            <CardHeader>
-              <CardTitle className="text-2xl text-white">
-                Lending Pools
-              </CardTitle>
-              <CardDescription className="text-white/70">
-                Browse and interact with available lending pools
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        Pool
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        Token
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        APY
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        TVL
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        Yield Distributed
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        Status
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        Created
-                      </th>
-                      <th className="text-left py-4 px-4 font-medium text-white/70">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockPools.map((pool) => (
-                      <tr
-                        key={pool.id}
-                        className="border-b border-white/5 hover:bg-white/5 transition-colors"
-                      >
-                        <td className="py-4 px-4">
-                          <div>
-                            <div className="font-medium text-white">
-                              {pool.strategy.name}
-                            </div>
-                            <div className="text-sm text-white/60 line-clamp-1">
-                              {pool.strategy.description}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <Badge
-                            variant="outline"
-                            className="font-mono border-cyan-400/30 text-cyan-300 bg-cyan-400/10"
-                          >
-                            {pool.strategy.tokenSymbol}
-                          </Badge>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="font-semibold text-green-400">
-                            {formatApy(pool.strategy.rewardApy)}
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="font-medium text-white">
-                            {formatCurrency(
-                              pool.totalDeposits,
-                              pool.strategy.tokenSymbol
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="font-medium text-white">
-                            ${pool.totalYieldDistributed.toLocaleString()}
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <Badge
-                            variant={pool.active ? "default" : "secondary"}
-                            className={
-                              pool.active
-                                ? "bg-green-500/20 text-green-300 border-green-400/30"
-                                : "bg-gray-500/20 text-gray-300 border-gray-400/30"
-                            }
-                          >
-                            {pool.active ? "Active" : "Inactive"}
-                          </Badge>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="text-sm text-white/60">
-                            {new Date(pool.createdAt).toLocaleDateString(
-                              "fr-FR"
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <Button
-                            onClick={() => setSelectedPool(pool)}
-                            size="sm"
-                            variant="outline"
-                            className="border-white/20 text-white hover:bg-white/10 hover:border-white/30"
-                          >
-                            Détails
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+        {/* Filters Section */}
+        <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] py-8">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+            <div className="flex flex-col lg:flex-row gap-6 items-center justify-between">
+              <div className="flex flex-col sm:flex-row items-center gap-4 flex-1">
+                <div className="relative w-full sm:w-auto">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 w-4 h-4" />
+                  <Input
+                    placeholder="Search pools..."
+                    value={filters.search}
+                    onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                    className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 h-11 min-w-[200px]"
+                  />
+                </div>
+                <select
+                  value={filters.sortBy}
+                  onChange={(e) => setFilters(prev => ({ ...prev, sortBy: e.target.value as any }))}
+                  className="bg-white/10 border border-white/20 rounded-lg px-4 py-2.5 text-white text-sm h-11 min-w-[140px] focus:ring-2 focus:ring-blue-500/50"
+                >
+                  <option value="apy" className="bg-gray-800">Sort by APY</option>
+                  <option value="tvl" className="bg-gray-800">Sort by TVL</option>
+                  <option value="newest" className="bg-gray-800">Sort by Newest</option>
+                </select>
+                <select
+                  value={filters.riskLevel}
+                  onChange={(e) => setFilters(prev => ({ ...prev, riskLevel: e.target.value as any }))}
+                  className="bg-white/10 border border-white/20 rounded-lg px-4 py-2.5 text-white text-sm h-11 min-w-[140px] focus:ring-2 focus:ring-blue-500/50"
+                >
+                  <option value="all" className="bg-gray-800">All Risk Levels</option>
+                  <option value="Low" className="bg-gray-800">Low Risk</option>
+                  <option value="Medium" className="bg-gray-800">Medium Risk</option>
+                  <option value="High" className="bg-gray-800">High Risk</option>
+                </select>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Details Modal */}
-          {selectedPool && (
-            <div
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-              onClick={() => setSelectedPool(null)}
-            >
-              <Card
-                className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900/90 backdrop-blur-xl border-white/20 text-white"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-2xl text-white">
-                        {selectedPool.strategy.name}
-                      </CardTitle>
-                      <CardDescription className="mt-2 text-white/70">
-                        {selectedPool.strategy.description}
-                      </CardDescription>
-                    </div>
-                    <Badge
-                      variant={selectedPool.active ? "default" : "secondary"}
-                      className={
-                        selectedPool.active
-                          ? "bg-green-500/20 text-green-300 border-green-400/30"
-                          : "bg-gray-500/20 text-gray-300 border-gray-400/30"
-                      }
-                    >
-                      {selectedPool.active ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Pool Details */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-white">
-                        Pool Information
-                      </h3>
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-white/70">Pool ID:</span>
-                          <span className="font-mono text-sm text-white">
-                            {selectedPool.id}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">Token:</span>
-                          <Badge
-                            variant="outline"
-                            className="border-cyan-400/30 text-cyan-300 bg-cyan-400/10"
-                          >
-                            {selectedPool.strategy.tokenSymbol}
-                          </Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">APY:</span>
-                          <span className="font-semibold text-green-400">
-                            {formatApy(selectedPool.strategy.rewardApy)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">TVL:</span>
-                          <span className="font-semibold text-white">
-                            {formatCurrency(
-                              selectedPool.totalDeposits,
-                              selectedPool.strategy.tokenSymbol
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">
-                            Yield Distributed:
-                          </span>
-                          <span className="font-semibold text-white">
-                            $
-                            {selectedPool.totalYieldDistributed.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">Created:</span>
-                          <span className="text-sm text-white">
-                            {new Date(
-                              selectedPool.createdAt
-                            ).toLocaleDateString("fr-FR")}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-white">
-                        Technical Details
-                      </h3>
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-white/70">Owner:</span>
-                          <span className="font-mono text-xs text-white">
-                            {selectedPool.owner.slice(0, 8)}...
-                            {selectedPool.owner.slice(-8)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">Vault Account:</span>
-                          <span className="font-mono text-xs text-white">
-                            {selectedPool.vaultAccount}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-white/70">Token Address:</span>
-                          <span className="font-mono text-xs text-white">
-                            {selectedPool.strategy.tokenAddress.slice(0, 8)}...
-                            {selectedPool.strategy.tokenAddress.slice(-8)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Strategy Performance */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-white">
-                      Performance Metrics
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg text-center backdrop-blur-sm">
-                        <div className="text-2xl font-bold text-green-400">
-                          {formatApy(selectedPool.strategy.rewardApy)}
-                        </div>
-                        <div className="text-sm text-white/70">Current APY</div>
-                      </div>
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg text-center backdrop-blur-sm">
-                        <div className="text-2xl font-bold text-white">
-                          {(
-                            (selectedPool.totalYieldDistributed /
-                              selectedPool.totalDeposits) *
-                            100
-                          ).toFixed(2)}
-                          %
-                        </div>
-                        <div className="text-sm text-white/70">Yield Rate</div>
-                      </div>
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg text-center backdrop-blur-sm">
-                        <div className="text-2xl font-bold text-white">
-                          {Math.floor(
-                            (Date.now() - selectedPool.createdAt) /
-                              (1000 * 60 * 60 * 24)
-                          )}
-                        </div>
-                        <div className="text-sm text-white/70">Days Active</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-4 pt-4">
-                    <Button
-                      className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white border-0"
-                      disabled={!selectedPool.active}
-                      onClick={() => setActionType("deposit")}
-                    >
-                      <ArrowUpRight className="h-4 w-4 mr-2" />
-                      Deposit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="flex-1 border-white/20 text-white hover:bg-white/10 hover:border-white/30"
-                      disabled={!selectedPool.active}
-                      onClick={() => setActionType("withdraw")}
-                    >
-                      <ArrowDownLeft className="h-4 w-4 mr-2" />
-                      Withdraw
-                    </Button>
-                    <Button
-                      onClick={() => setSelectedPool(null)}
-                      variant="ghost"
-                      className="text-white hover:bg-white/10"
-                    >
-                      Fermer
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  id="activeOnly"
+                  checked={filters.activeOnly}
+                  onChange={(e) => setFilters(prev => ({ ...prev, activeOnly: e.target.checked }))}
+                  className="w-4 h-4 text-blue-500 bg-white/10 border-white/20 rounded focus:ring-blue-500/50 focus:ring-2"
+                />
+                <label htmlFor="activeOnly" className="text-white/70 text-sm font-medium whitespace-nowrap">
+                  Active pools only
+                </label>
+              </div>
             </div>
-          )}
+          </div>
+        </section>
 
-          {/* Action Modal (Deposit/Withdraw) */}
-          {selectedPool && actionType && (
-            <div
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]"
-              onClick={closeActionModal}
-            >
-              <Card
-                className="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border-white/20 text-white"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <CardHeader>
-                  <CardTitle className="capitalize text-white">
-                    {actionType} {selectedPool.strategy.tokenSymbol}
-                  </CardTitle>
-                  <CardDescription className="text-white/70">
-                    {actionType === "deposit"
-                      ? `Déposer des ${selectedPool.strategy.tokenSymbol} dans ${selectedPool.strategy.name}`
-                      : `Retirer des ${selectedPool.strategy.tokenSymbol} de ${selectedPool.strategy.name}`}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Pool Information */}
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-white/70">APY:</span>
-                      <div className="font-semibold text-green-400">
-                        {formatApy(selectedPool.strategy.rewardApy)}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-white/70">
-                        {actionType === "deposit"
-                          ? "Min. Deposit:"
-                          : "Your Balance:"}
-                      </span>
-                      <div className="font-semibold text-white">
-                        {actionType === "deposit"
-                          ? `1 ${selectedPool.strategy.tokenSymbol}`
-                          : `${getUserBalance(selectedPool.id)} ${
-                              selectedPool.strategy.tokenSymbol
-                            }`}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Amount Input */}
-                  <div className="space-y-2">
-                    <Label htmlFor="amount" className="text-white">
-                      Montant à{" "}
-                      {actionType === "deposit" ? "déposer" : "retirer"}
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="amount"
-                        type="number"
-                        placeholder={`Entrer le montant en ${selectedPool.strategy.tokenSymbol}`}
-                        value={amount}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                          setAmount(e.target.value)
-                        }
-                        className="flex-1 bg-white/5 border-white/20 text-white placeholder:text-white/50 focus:border-cyan-400"
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={handleSetMaxAmount}
-                        className="px-6 border-white/20 text-white hover:bg-white/10 hover:border-white/30"
-                      >
-                        All
-                      </Button>
-                    </div>
-                    {amount && (
-                      <p className="text-sm text-white/60">
-                        ≈ ${(parseFloat(amount || "0") * 1).toLocaleString()}{" "}
-                        USD
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-4">
-                    <Button
-                      onClick={
-                        actionType === "deposit"
-                          ? handleDeposit
-                          : handleWithdraw
-                      }
-                      className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white border-0"
-                      disabled={!amount || parseFloat(amount) <= 0}
-                    >
-                      {actionType === "deposit" ? "Déposer" : "Retirer"}{" "}
-                      {selectedPool.strategy.tokenSymbol}
-                    </Button>
-                    <Button
-                      onClick={closeActionModal}
-                      variant="outline"
-                      className="border-white/20 text-white hover:bg-white/10 hover:border-white/30"
-                    >
-                      Annuler
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+        {/* Pools Grid */}
+        <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] py-16">
+          {isLoading ? (
+            <div className="flex flex-col justify-center items-center py-24">
+              <div className="w-12 h-12 border-4 border-white/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+              <span className="text-white/70 text-lg">Loading pools...</span>
             </div>
+          ) : filteredPools.length === 0 ? (
+            <div className="text-center py-24">
+              <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="w-8 h-8 text-white/50" />
+              </div>
+              <h3 className="text-2xl font-semibold text-white mb-3">No pools found</h3>
+              <p className="text-white/60 text-lg">Try adjusting your filters or check back later.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold text-white">
+                  Available Pools ({filteredPools.length})
+                </h2>
+                <div className="text-white/60 text-sm">
+                  Showing {filteredPools.length} of {pools.length} pools
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-8">
+                {filteredPools.map((pool) => {
+                  const mintStr = new PublicKey(pool.token.mint).toString();
+                  console.log('pool.token.mint:', mintStr, 'solde:', userTokenBalances[mintStr]);
+                  return (
+                    <LendingPoolCard
+                      key={pool.id}
+                      pool={pool}
+                      userConnected={connected}
+                      userTokenBalance={userTokenBalances[mintStr] || 0}
+                      onDeposit={(amount) => handleDeposit(pool.id, amount)}
+                      onWithdraw={(amount) => handleWithdraw(pool.id, amount)}
+                      onRedeem={() => handleRedeem(pool.id)}
+                      loading={loading}
+                    />
+                  );
+                })}
+              </div>
+            </>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
