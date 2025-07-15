@@ -6,7 +6,7 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import { resolve } from "node:path";
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [TanStackRouterVite({ autoCodeSplitting: true }), viteReact(), tailwindcss()],
   test: {
     globals: true,
@@ -26,4 +26,8 @@ export default defineConfig({
   optimizeDeps: {
     include: ['@solana/web3.js', '@solana/wallet-adapter-base', '@solana/wallet-adapter-react', '@coral-xyz/anchor'],
   },
-});
+  // Configure environment variables
+  envPrefix: 'VITE_',
+  // Log mode for debugging
+  logLevel: mode === 'mock' ? 'info' : 'warn',
+}));
