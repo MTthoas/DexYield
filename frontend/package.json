@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "vite --port 3000",
+    "dev:fake": "vite --port 3000 --mode mock",
     "build": "vite build && tsc",
     "serve": "vite preview",
     "test": "vitest run"

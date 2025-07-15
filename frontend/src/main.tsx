@@ -11,6 +11,12 @@ import { routeTree } from './routeTree.gen'
 import './styles.css'
 import reportWebVitals from './reportWebVitals.ts'
 
+// Import mock setup
+import { MockApp, isMockMode, debugMockMode } from './mock'
+
+// Debug mock mode
+debugMockMode()
+
 // Create a new router instance
 const router = createRouter({
   routeTree,
@@ -32,11 +38,24 @@ declare module '@tanstack/react-router' {
 const rootElement = document.getElementById('app')
 if (rootElement && !rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
-  root.render(
-    <StrictMode>
-      <RouterProvider router={router} />
-    </StrictMode>,
-  )
+  
+  // Conditionally wrap with MockApp if in mock mode
+  if (isMockMode()) {
+    console.log('🎭 Starting in MOCK mode')
+    root.render(
+      <StrictMode>
+        <MockApp>
+          <RouterProvider router={router} />
+        </MockApp>
+      </StrictMode>,
+    )
+  } else {
+    root.render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>,
+    )
+  }
 }
 
 // If you want to start measuring performance in your app, pass a function

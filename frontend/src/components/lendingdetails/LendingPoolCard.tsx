@@ -102,7 +102,10 @@ export function LendingPoolCard({
 
   // Ajout : formatage du solde disponible selon les décimales du token (utilitaire universel)
   const formatAvailable = () => {
-    return formatTokenAmount(BigInt(userTokenBalance), pool.token.decimals || 6);
+    // Convertir le nombre décimal en entier en multipliant par 10^decimals
+    const decimals = pool.token.decimals || 6;
+    const integerBalance = Math.floor(userTokenBalance * Math.pow(10, decimals));
+    return formatTokenAmount(BigInt(integerBalance), decimals);
   };
 
   return (
