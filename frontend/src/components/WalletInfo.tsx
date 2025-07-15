@@ -63,7 +63,7 @@ export function WalletInfo() {
             if (mint === "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU") {
               icon =
                 "https://png.pngtree.com/png-vector/20220709/ourmid/pngtree-usd-coin-usdc-digital-stablecoin-icon-technology-pay-web-vector-png-image_37843734.png";
-              symbol = "USDT";
+              symbol = "USDC";
             }
             return {
               mint,
