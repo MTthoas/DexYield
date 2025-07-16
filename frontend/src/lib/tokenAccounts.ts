@@ -55,9 +55,10 @@ export class TokenAccountManager {
 
   async getTokenAccountInfo(
     mint: PublicKey,
-    owner: PublicKey
+    owner: PublicKey,
+    allowOwnerOffCurve = false
   ): Promise<TokenAccountInfo> {
-    const associatedToken = await getAssociatedTokenAddress(mint, owner);
+    const associatedToken = await getAssociatedTokenAddress(mint, owner, allowOwnerOffCurve);
 
     try {
       const account = await getAccount(this.connection, associatedToken);

@@ -118,11 +118,14 @@ pub mod marketplace {
 
     pub fn create_strategy(
         ctx: Context<CreateStrategy>,
+        strategy_id: u64, // Unique ID for this strategy
         reward_apy: u64, // 10_000 = 10.00%
     ) -> Result<()> {
         require!(reward_apy <= 100_000, ErrorCode::InvalidAPY);
 
         let strategy = &mut ctx.accounts.strategy;
+        strategy.strategy_id = strategy_id;
+        strategy.admin = ctx.accounts.admin.key();
         strategy.token_address = ctx.accounts.token_address.key();
         strategy.reward_apy = reward_apy;
         strategy.created_at = Clock::get()?.unix_timestamp;
@@ -266,6 +269,7 @@ pub struct CancelListing<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(strategy_id: u64)]
 pub struct CreateStrategy<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -273,7 +277,7 @@ pub struct CreateStrategy<'info> {
     #[account(
         init,
         payer = admin,
-        seeds = [b"strategy", token_address.key().as_ref()],
+        seeds = [b"strategy", token_address.key().as_ref(), admin.key().as_ref(), strategy_id.to_le_bytes().as_ref()],
         bump,
         space = 8 + Strategy::INIT_SPACE
     )]
@@ -346,13 +350,15 @@ impl Listing {
 
 #[account]
 pub struct Strategy {
+    pub strategy_id: u64,
+    pub admin: Pubkey,
     pub token_address: Pubkey,
     pub reward_apy: u64, // 5% = 5000 (2 décimales)
     pub created_at: i64,
 }
 
 impl Strategy {
-    pub const INIT_SPACE: usize = 32 + 8 + 8;
+    pub const INIT_SPACE: usize = 8 + 32 + 32 + 8 + 8;
 }
 
 #[error_code]

@@ -19,7 +19,12 @@
       "Bash(export:*)",
       "Bash(cp:*)",
       "Bash(npm run build:*)",
-      "Bash(npm install)"
+      "Bash(npm install)",
+      "Bash(node:*)",
+      "Bash(ANCHOR_WALLET=~/.config/solana/id.json node scripts/test-deposit.js)",
+      "Bash(ANCHOR_WALLET=~/.config/solana/id.json node scripts/interactive-deposit.js)",
+      "Bash(npm run dev:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

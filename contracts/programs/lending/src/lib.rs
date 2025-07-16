@@ -325,6 +325,7 @@ pub mod lending {
 
     pub fn create_strategy(
         ctx: Context<CreateStrategy>,
+        strategy_id: u64, // Unique ID for this strategy
         reward_apy: u64, // 10_000 = 10.00%
         name: String,
         description: String,
@@ -335,6 +336,8 @@ pub mod lending {
         require!(description.len() <= 200, ErrorCode::DescriptionTooLong);
 
         let strategy = &mut ctx.accounts.strategy;
+        strategy.strategy_id = strategy_id;
+        strategy.admin = ctx.accounts.admin.key();
         strategy.token_address = ctx.accounts.token_address.key();
         strategy.reward_apy = reward_apy;
         strategy.name = name;
@@ -345,7 +348,7 @@ pub mod lending {
         Ok(())
     }
 
-    pub fn toggle_strategy_status(ctx: Context<ToggleStrategyStatus>) -> Result<()> {
+    pub fn toggle_strategy_status(ctx: Context<ToggleStrategyStatus>, strategy_id: u64) -> Result<()> {
         let strategy = &mut ctx.accounts.strategy;
         strategy.active = !strategy.active;
         Ok(())
@@ -586,15 +589,16 @@ pub struct CalculatePendingYield<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(strategy_id: u64)]
 pub struct ToggleStrategyStatus<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), admin.key().as_ref(), strategy_id.to_le_bytes().as_ref()],
         bump,
-        constraint = admin.key() == strategy.token_address @ ErrorCode::Unauthorized
+        constraint = admin.key() == strategy.admin @ ErrorCode::Unauthorized
     )]
     pub strategy: Account<'info, Strategy>,
 }
@@ -646,6 +650,8 @@ impl UserDeposit {
 // Nouvelle struct de stratégie
 #[account]
 pub struct Strategy {
+    pub strategy_id: u64,
+    pub admin: Pubkey,
     pub token_address: Pubkey,
     pub reward_apy: u64,
     pub name: String,
@@ -656,10 +662,11 @@ pub struct Strategy {
 }
 
 impl Strategy {
-    pub const INIT_SPACE: usize = 32 + 8 + (4 + 50) + (4 + 200) + 8 + 1 + 8;
+    pub const INIT_SPACE: usize = 8 + 32 + 32 + 8 + (4 + 50) + (4 + 200) + 8 + 1 + 8;
 }
 
 #[derive(Accounts)]
+#[instruction(strategy_id: u64)]
 pub struct CreateStrategy<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -667,7 +674,7 @@ pub struct CreateStrategy<'info> {
     #[account(
         init,
         payer = admin,
-        seeds = [b"strategy", token_address.key().as_ref()],
+        seeds = [b"strategy", token_address.key().as_ref(), admin.key().as_ref(), strategy_id.to_le_bytes().as_ref()],
         bump,
         space = 8 + Strategy::INIT_SPACE
     )]

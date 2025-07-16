@@ -1,47 +1,43 @@
-import { useMemo } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { ContractService, getProvider } from '../lib/contracts';
+import { useMemo } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { ContractService, getProvider } from "../lib/contracts";
 
 export const useContracts = () => {
   const wallet = useWallet();
-  
+
   const contractService = useMemo(() => {
-    console.log('=== useContracts START ===');
-    console.log('Wallet connected:', wallet.connected);
-    console.log('Wallet publicKey:', wallet.publicKey?.toString());
-    console.log('Wallet signTransaction:', typeof wallet.signTransaction);
-    console.log('Wallet object:', wallet);
-    
     if (!wallet.connected) {
-      console.log('Wallet not connected, returning null');
+      console.log("Wallet not connected, returning null");
       return null;
     }
-    
+
     if (!wallet.publicKey) {
-      console.log('Wallet publicKey missing, returning null');
+      console.log("Wallet publicKey missing, returning null");
       return null;
     }
-    
+
     if (!wallet.signTransaction) {
-      console.log('Wallet signTransaction missing, returning null');
+      console.log("Wallet signTransaction missing, returning null");
       return null;
     }
-    
+
     try {
-      console.log('Creating provider...');
+      console.log("Creating provider for wallet...");
       const provider = getProvider(wallet);
-      console.log('Provider created:', provider);
+      console.log("Provider created successfully");
       
-      console.log('Creating ContractService...');
       const service = new ContractService(provider);
-      console.log('ContractService created:', service);
-      console.log('=== useContracts SUCCESS ===');
+      console.log("ContractService created, checking initialization...");
+      console.log("Is initialized:", service.isInitialized());
+      
+      if (!service.isInitialized()) {
+        console.error("ContractService failed to initialize properly");
+        return null;
+      }
+      
       return service;
     } catch (error) {
-      console.error('=== useContracts ERROR ===');
-      console.error('Error creating contract service:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
-      console.error('=== END ERROR ===');
+      console.error("Error in useContracts:", error);
       return null;
     }
   }, [wallet.connected, wallet.publicKey, wallet.signTransaction]);

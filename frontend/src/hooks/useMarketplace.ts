@@ -3,6 +3,7 @@ import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useContracts } from './useContracts';
 import { findListingPDA, findEscrowAuthorityPDA } from '../lib/contracts';
+import { DEVNET_CONFIG } from '../lib/constants';
 
 export const useMarketplace = () => {
   const { publicKey } = useWallet();

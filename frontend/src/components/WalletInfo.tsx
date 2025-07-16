@@ -4,13 +4,19 @@ import { Button } from "./ui/button";
 import { Copy, ExternalLink } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { PublicKey } from "@solana/web3.js";
+import { useLending } from "../hooks/useLending";
+import { useContracts } from "../hooks/useContracts";
+import { DEFAULT_POOL_OWNER } from "../lib/constants";
 
 export function WalletInfo() {
   const { connected, publicKey, disconnect } = useWallet();
   const { connection } = useConnection();
+  const { fetchStrategies, getUserDeposit, getUserTokenBalance } = useLending();
+  const contractService = useContracts();
   const [copying, setCopying] = useState(false);
   const [solBalance, setSolBalance] = useState(0);
   const [splTokens, setSplTokens] = useState<any[]>([]);
+  const [yieldTokens, setYieldTokens] = useState<any[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +29,83 @@ export function WalletInfo() {
       return 0;
     }
   }, [publicKey, connection]);
+
+  const fetchYieldTokens = useCallback(async () => {
+    if (!connected || !publicKey || !contractService) {
+      setYieldTokens([]);
+      return;
+    }
+
+    try {
+      console.log("🔍 Fetching yield tokens...");
+      const strategiesData = await fetchStrategies();
+
+      if (!strategiesData || strategiesData.length === 0) {
+        console.log("No strategies found");
+        setYieldTokens([]);
+        return;
+      }
+
+      const yieldTokensData = [];
+
+      for (const strategy of strategiesData) {
+        try {
+          // Récupérer les données de dépôt utilisateur
+          const userDeposit = await getUserDeposit(
+            DEFAULT_POOL_OWNER,
+            new PublicKey(strategy.id)
+          );
+
+          if (userDeposit && userDeposit.yieldEarned > 0) {
+            // Construire les comptes pour récupérer le YT mint
+            const accounts = await contractService.buildLendingAccounts(
+              publicKey,
+              DEFAULT_POOL_OWNER,
+              new PublicKey(strategy.tokenAddress),
+              DEFAULT_POOL_OWNER, // admin
+              strategy.strategyId // or strategy.id if that's the correct field
+            );
+
+            // Récupérer le solde YT
+            const ytBalance = await getUserTokenBalance(accounts.ytMintPDA);
+            const ytBalanceNum =
+              ytBalance &&
+              typeof ytBalance === "object" &&
+              "balance" in ytBalance
+                ? Number(ytBalance.balance) / Math.pow(10, 6) // Assume 6 decimals for YT
+                : 0;
+
+            if (ytBalanceNum > 0) {
+              yieldTokensData.push({
+                mint: accounts.ytMintPDA.toString(),
+                symbol: `YT-${strategy.tokenSymbol}`,
+                icon: `/images/tokens/yt-${strategy.tokenSymbol?.toLowerCase()}.png`,
+                amount: ytBalanceNum,
+                yieldEarned: userDeposit.yieldEarned / Math.pow(10, 6), // Convert from raw amount
+                strategy: strategy.name,
+                decimals: 6,
+              });
+            }
+          }
+        } catch (error) {
+          console.log(`Error fetching YT for strategy ${strategy.id}:`, error);
+        }
+      }
+
+      console.log("📊 Yield tokens found:", yieldTokensData);
+      setYieldTokens(yieldTokensData);
+    } catch (error) {
+      console.error("Error fetching yield tokens:", error);
+      setYieldTokens([]);
+    }
+  }, [
+    connected,
+    publicKey,
+    contractService,
+    fetchStrategies,
+    getUserDeposit,
+    getUserTokenBalance,
+  ]);
 
   useEffect(() => {
     const fetchSplTokens = async () => {
@@ -75,6 +158,9 @@ export function WalletInfo() {
           })
           .filter((t) => t.amount > 0);
         setSplTokens(tokens);
+
+        // Fetch yield tokens après avoir chargé les SPL tokens
+        await fetchYieldTokens();
       } catch (e) {
         setSplTokens([]);
       } finally {
@@ -82,7 +168,7 @@ export function WalletInfo() {
       }
     };
     fetchSplTokens();
-  }, [connected, publicKey, connection, getSolBalance]);
+  }, [connected, publicKey, connection, getSolBalance, fetchYieldTokens]);
 
   // Récupérer les prix en temps réel (CoinGecko)
   useEffect(() => {
@@ -121,17 +207,36 @@ export function WalletInfo() {
   if (!connected || !publicKey) return null;
   const address = publicKey.toBase58();
 
-  // Ajout du solde SOL comme token dans la liste
-  const allTokens = [
-    {
+  // Merge tokens and deduplicate by mint address
+  const tokenMap = new Map();
+  
+  // Add SOL balance first
+  if (solBalance > 0) {
+    tokenMap.set("So11111111111111111111111111111111111111112", {
       mint: "So11111111111111111111111111111111111111112",
       symbol: "SOL",
       icon: "https://static.vecteezy.com/system/resources/thumbnails/024/093/312/small_2x/solana-sol-glass-crypto-coin-3d-illustration-free-png.png",
       amount: solBalance,
       decimals: 9,
-    },
-    ...splTokens,
-  ];
+      type: "native"
+    });
+  }
+  
+  // Add SPL tokens (will override SOL if it exists in SPL tokens)
+  splTokens.forEach(token => {
+    if (token.amount > 0) {
+      tokenMap.set(token.mint, { ...token, type: "spl" });
+    }
+  });
+  
+  // Add yield tokens with unique keys
+  yieldTokens.forEach((token, index) => {
+    if (token.amount > 0) {
+      tokenMap.set(`yt-${token.mint}-${index}`, { ...token, type: "yield" });
+    }
+  });
+  
+  const allTokens = Array.from(tokenMap.values());
 
   // Mapping mint -> coingeckoId
   const mintToCg: Record<string, string> = {
@@ -180,28 +285,30 @@ export function WalletInfo() {
             {loading
               ? "Chargement du solde..."
               : allTokens.filter((t) => t.amount > 0).length === 0
-              ? "Aucun token trouvé"
-              : `${allTokens.filter((t) => t.amount > 0).length} tokens`}
+                ? "Aucun token trouvé"
+                : `${allTokens.filter((t) => t.amount > 0).length} tokens`}
           </div>
           <div className="flex flex-wrap gap-3">
-            {allTokens
-              .filter((t) => t.amount > 0)
-              .map((token) => {
+            {Array.from(tokenMap.entries())
+              .filter(([key, token]) => token.amount > 0)
+              .map(([key, token]) => {
                 const cgId = mintToCg[token.mint];
                 const price = cgId ? prices[cgId] || 0 : 0;
                 const value = price * token.amount;
+                const isYieldToken = token.symbol?.startsWith("YT-");
                 return (
                   <div
-                    key={token.mint}
-                    className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2 min-w-[120px]"
+                    key={key}
+                    className={`flex items-center gap-2 bg-background border ${isYieldToken ? "border-yellow-500/50 bg-yellow-500/5" : "border-border"} rounded-lg px-3 py-2 min-w-[120px]`}
                   >
                     <img
                       src={token.icon}
                       alt={token.symbol}
                       className="w-6 h-6 rounded-full"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png";
+                        (e.target as HTMLImageElement).src = isYieldToken
+                          ? "https://img.icons8.com/color/48/000000/treasure-chest.png"
+                          : "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png";
                       }}
                     />
                     <span className="text-xs text-muted-foreground">
@@ -209,9 +316,16 @@ export function WalletInfo() {
                         maximumFractionDigits: 4,
                       })}
                     </span>
-                    <span className="font-medium text-foreground">
+                    <span
+                      className={`font-medium ${isYieldToken ? "text-yellow-400" : "text-foreground"}`}
+                    >
                       {token.symbol}
                     </span>
+                    {isYieldToken && (token as any).yieldEarned > 0 && (
+                      <span className="ml-1 text-xs text-green-400 font-semibold">
+                        +{(token as any).yieldEarned.toFixed(4)}
+                      </span>
+                    )}
                     <span className="ml-2 text-xs text-accent font-semibold">
                       {price > 0
                         ? `$${value.toLocaleString(undefined, {

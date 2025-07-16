@@ -32,7 +32,12 @@ interface LendingPoolCardProps {
   userTokenBalance?: number;
   onDeposit: (amount: number) => Promise<void>;
   onWithdraw: (amount: number) => Promise<void>;
-  onRedeem: () => Promise<void>;
+  onRedeem: (poolId: string) => Promise<void>;
+  checkRedeemAvailability?: (depositTime: number) => {
+    available: boolean;
+    timeRemaining: number;
+    availableAt: Date | null;
+  };
   loading?: boolean;
 }
 
@@ -43,6 +48,7 @@ export function LendingPoolCard({
   onDeposit, 
   onWithdraw, 
   onRedeem,
+  checkRedeemAvailability,
   loading = false 
 }: LendingPoolCardProps) {
   const [amount, setAmount] = useState<string>('');
@@ -108,6 +114,26 @@ export function LendingPoolCard({
     return formatTokenAmount(BigInt(integerBalance), decimals);
   };
 
+  // Format time remaining for claim availability
+  const formatTimeRemaining = (milliseconds: number) => {
+    const days = Math.floor(milliseconds / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((milliseconds % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  };
+
+  // Check if claiming is available
+  const claimStatus = pool.userDepositTime && checkRedeemAvailability 
+    ? checkRedeemAvailability(pool.userDepositTime)
+    : { available: false, timeRemaining: 0, availableAt: null };
+
   return (
     <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300 hover:border-white/20 group">
       <div className="p-6 space-y-6">
@@ -157,18 +183,30 @@ export function LendingPoolCard({
             <div className="flex justify-between items-center mb-2">
               <span className="text-blue-300 text-sm font-medium">Your Position</span>
               {pool.userYieldEarned && pool.userYieldEarned > 0 && (
-                <Button
-                  onClick={onRedeem}
-                  disabled={actionLoading}
-                  size="sm"
-                  className="bg-green-500/20 hover:bg-green-500/30 text-green-300 border-green-500/30 h-6 px-2 text-xs"
-                >
-                  Claim
-                </Button>
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    onClick={() => onRedeem(pool.id)}
+                    disabled={actionLoading || !claimStatus.available}
+                    size="sm"
+                    className={`h-6 px-2 text-xs ${
+                      claimStatus.available 
+                        ? 'bg-green-500/20 hover:bg-green-500/30 text-green-300 border-green-500/30' 
+                        : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30 cursor-not-allowed'
+                    }`}
+                    title={!claimStatus.available ? `Available in ${formatTimeRemaining(claimStatus.timeRemaining)}` : 'Claim your yield tokens'}
+                  >
+                    {claimStatus.available ? 'Claim' : 'Locked'}
+                  </Button>
+                  {!claimStatus.available && claimStatus.timeRemaining > 0 && (
+                    <span className="text-yellow-300 text-xs opacity-80">
+                      {formatTimeRemaining(claimStatus.timeRemaining)}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-white/70">Deposited</span>
+              <span className="text-white/70">Locked Tokens</span>
               <span className="text-white font-medium">
                 {formatNumber(pool.userDeposit)} {pool.token.symbol}
               </span>

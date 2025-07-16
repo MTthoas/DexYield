@@ -3,7 +3,7 @@ import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useContracts } from './useContracts';
 import { findLendingPoolPDA, findUserDepositPDA, findStrategyPDA } from '../lib/contracts';
-import { TOKEN_SYMBOLS } from '@/lib/constants';
+import { TOKEN_SYMBOLS, DEVNET_CONFIG } from '@/lib/constants';
 
 export const useLending = () => {
   const { publicKey } = useWallet();
@@ -233,7 +233,20 @@ export const useLending = () => {
 
   // Fetch all strategies
   const fetchStrategies = useCallback(async () => {
-    if (!contractService || typeof contractService.getAllStrategies !== 'function') return;
+    console.log("fetchStrategies called");
+    console.log("contractService:", contractService);
+    console.log("contractService.getAllStrategies:", typeof contractService?.getAllStrategies);
+    
+    if (!contractService) {
+      console.warn("No contractService available");
+      return;
+    }
+    
+    if (typeof contractService.getAllStrategies !== 'function') {
+      console.warn("getAllStrategies is not a function");
+      return;
+    }
+    
     setLoading(true);
     try {
       // Utilisation de la méthode publique du service
@@ -244,6 +257,7 @@ export const useLending = () => {
         const mintStr = account.tokenAddress?.toBase58();
         return {
           id: s.publicKey?.toBase58(),
+          strategyId: account.strategyId?.toNumber() || 0,
           tokenAddress: mintStr,
           rewardApy: account.rewardApy?.toNumber(),
           name: account.name,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, Search } from "lucide-react";
@@ -7,21 +7,24 @@ import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useLending } from "@/hooks/useLending";
 import { useLendingSimplified } from "@/hooks/useLendingSimplified";
 import { LendingPoolCard } from "./LendingPoolCard";
-import { TOKEN_SYMBOLS, TOKEN_DECIMALS } from "@/lib/constants";
+import {
+  TOKEN_SYMBOLS,
+  TOKEN_DECIMALS,
+  DEVNET_CONFIG,
+  DEFAULT_POOL_OWNER,
+  USDC_MINT,
+} from "@/lib/constants";
 import type { LendingPool, PoolFilters, Strategy } from "./Lending.type";
 import { WalletInfo } from "@/components/WalletInfo";
 // Simple toast utility
 const toast = {
   success: (message: string) => {
-    console.log("✅ Success:", message);
     alert(`Success: ${message}`);
   },
   error: (message: string) => {
-    console.error("❌ Error:", message);
     alert(`Error: ${message}`);
   },
   info: (message: string) => {
-    console.info("ℹ️ Info:", message);
     alert(`Info: ${message}`);
   },
 };
@@ -64,12 +67,30 @@ const createPoolsFromStrategies = (
       strategy.tokenSymbol === "USDC"
         ? 1
         : strategy.tokenSymbol === "SOL"
-        ? 100
-        : strategy.tokenSymbol === "mSOL"
-        ? 110
-        : 1;
+          ? 100
+          : strategy.tokenSymbol === "mSOL"
+            ? 110
+            : 1;
+    // Si totalDeposited est 0, utiliser le dépôt utilisateur comme fallback pour le TVL
+    const userDepositAmount = userDeposit ? getBNNumber(userDeposit.amount) : 0;
+
+    // Pour le TVL, utiliser au minimum le dépôt utilisateur s'il existe
+    const tvlDeposits = Math.max(totalDeposited, userDepositAmount);
+
     const tvl =
-      (totalDeposited / Math.pow(10, tokenConfig?.decimals || 6)) * tokenPrice;
+      (tvlDeposits / Math.pow(10, tokenConfig?.decimals || 6)) * tokenPrice;
+
+    // Debug TVL calculation
+    console.log(`🔍 TVL Debug for ${strategy.name}:`, {
+      totalDeposited,
+      userDepositAmount,
+      tvlDeposits,
+      tokenDecimals: tokenConfig?.decimals || 6,
+      tokenPrice,
+      calculatedTVL: tvl,
+      tokenSymbol: strategy.tokenSymbol,
+      userDeposit: userDeposit,
+    });
     return {
       id: strategy.id,
       name: strategy.name,
@@ -93,14 +114,15 @@ const createPoolsFromStrategies = (
         ? getBNNumber(userDeposit.yieldEarned) /
           Math.pow(10, tokenConfig?.decimals || 6)
         : undefined,
+      userDepositTime: userDeposit ? userDeposit.depositTime : undefined,
       isActive: strategy.active,
       description: strategy.description,
       riskLevel:
         strategy.tokenSymbol === "USDC"
           ? "Low"
           : strategy.tokenSymbol === "SOL"
-          ? "Medium"
-          : "High",
+            ? "Medium"
+            : "High",
       createdAt: new Date(createdAt * 1000).toISOString(), // timestamp unix -> ISO
     };
   });
@@ -117,6 +139,7 @@ export default function LendingPage() {
     redeem,
     initializeStrategy,
     initializeLendingPool,
+    checkRedeemAvailability,
   } = useLendingSimplified();
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -131,92 +154,190 @@ export default function LendingPage() {
     riskLevel: "all",
     activeOnly: true,
   });
+  const [devMode, setDevMode] = useState(false);
+
+  // Refs for component lifecycle management
+  const mountedRef = useRef(true);
+  const loadingRef = useRef(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Charger les stratégies et pools
   const loadPoolsData = useCallback(async () => {
+    console.log("🔍 loadPoolsData called - mounted:", mountedRef.current);
+    
+    // Don't check mounted here - let it execute and check later
+    // if (!mountedRef.current) return;
+
     setIsLoading(true);
     try {
+      console.log("📞 Calling fetchStrategies...");
       const strategiesDataRaw = await fetchStrategies();
+      console.log("📈 strategiesDataRaw received:", strategiesDataRaw);
+      
       const strategiesData = Array.isArray(strategiesDataRaw)
         ? strategiesDataRaw
         : [];
+      console.log("📊 strategiesData processed:", strategiesData.length, "items");
+      
+      if (!strategiesDataRaw) {
+        console.error(
+          "[DEBUG] fetchStrategies returned falsy value:",
+          strategiesDataRaw
+        );
+      }
+
+      if (!mountedRef.current) return; // Vérifier si le composant est encore monté
+
+      setStrategies(strategiesData);
+
       if (strategiesData.length > 0) {
-        setStrategies(strategiesData);
         let userDeposits: any[] = [];
         if (connected && publicKey) {
           try {
             userDeposits = await Promise.all(
               strategiesData.map(async (strategy) => {
                 try {
-                  const depositRaw = await getUserDeposit(
-                    publicKey,
-                    strategy.id
+                  console.log(
+                    `🔍 Fetching deposit for strategy ${strategy.id}...`
                   );
+                  const depositRaw = await getUserDeposit(
+                    DEFAULT_POOL_OWNER,
+                    new PublicKey(strategy.id)
+                  );
+                  console.log(`🔍 depositRaw for ${strategy.id}:`, depositRaw);
+
                   if (
                     depositRaw &&
                     typeof depositRaw === "object" &&
-                    typeof depositRaw.amount === "number"
+                    depositRaw.amount !== undefined
                   ) {
-                    return {
-                      amount: Number(depositRaw.amount) || 0,
-                      yieldEarned: Number(depositRaw.yieldEarned) || 0,
+                    const userDepositData = {
+                      amount: getBNNumber(depositRaw.amount) || 0,
+                      yieldEarned: getBNNumber(depositRaw.yieldEarned) || 0,
+                      depositTime: getBNNumber(depositRaw.depositTime) || 0,
                       strategy: strategy.id,
                     };
+                    console.log(`✅ Found user deposit:`, userDepositData);
+                    return userDepositData;
                   }
+                  console.log(`❌ No valid deposit found for ${strategy.id}`);
                   return null;
-                } catch {
+                } catch (error) {
+                  console.log(
+                    `❌ Error fetching deposit for ${strategy.id}:`,
+                    error
+                  );
                   return null;
                 }
               })
             );
             userDeposits = userDeposits.filter(Boolean);
           } catch (error) {
+            console.error("Error fetching user deposits:", error);
             toast.error("Failed to fetch user deposits");
           }
         }
+
+        if (!mountedRef.current) return; // Vérifier à nouveau avant setState
+
+        console.log("🏊 Creating pools from strategies...");
         const poolsData = createPoolsFromStrategies(
           strategiesData,
           userDeposits
         );
+        console.log("🏊 Pools created:", poolsData.length, "pools");
+        console.log("🏊 Pools data:", poolsData);
         setPools(poolsData);
       } else {
+        if (mountedRef.current) {
+          setPools([]);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading pools data:", error);
+      toast.error("Failed to load pools data");
+      if (mountedRef.current) {
         setStrategies([]);
         setPools([]);
       }
-    } catch (error) {
-      toast.error("Failed to load pools data");
     } finally {
-      setIsLoading(false);
+      console.log("🔚 loadPoolsData finally block - mounted:", mountedRef.current);
+      if (mountedRef.current) {
+        setIsLoading(false);
+        console.log("✅ Set isLoading to false");
+      } else {
+        console.log("❌ Not setting isLoading to false because component is unmounted");
+      }
     }
   }, [fetchStrategies, getUserDeposit, connected, publicKey]);
 
   // Charger les balances utilisateur
   const loadUserBalances = useCallback(async () => {
-    if (!connected || !publicKey) return;
+    if (!connected || !publicKey || strategies.length === 0) return;
+
     const balances: Record<string, number> = {};
+
+    // Récupérer directement le solde USDC
+    try {
+      const usdcBalanceRaw = await getUserTokenBalance(USDC_MINT);
+      let usdcBalance = 0;
+      if (
+        usdcBalanceRaw &&
+        typeof usdcBalanceRaw === "object" &&
+        "balance" in usdcBalanceRaw
+      ) {
+        // Si c'est un objet TokenAccountInfo avec balance
+        usdcBalance = usdcBalanceRaw.balance
+          ? Number(usdcBalanceRaw.balance) / Math.pow(10, TOKEN_DECIMALS.USDC)
+          : 0;
+      } else if (typeof usdcBalanceRaw === "bigint") {
+        usdcBalance =
+          Number(usdcBalanceRaw) / Math.pow(10, TOKEN_DECIMALS.USDC);
+      } else if (typeof usdcBalanceRaw === "number" && !isNaN(usdcBalanceRaw)) {
+        usdcBalance = usdcBalanceRaw / Math.pow(10, TOKEN_DECIMALS.USDC);
+      }
+
+      balances[USDC_MINT.toString()] = usdcBalance;
+    } catch (error) {
+      console.error("Error loading USDC balance:", error);
+      balances[USDC_MINT.toString()] = 0;
+    }
+
+    // Récupérer les balances pour les autres stratégies
     for (const strategy of strategies) {
       try {
         const mintStr = new PublicKey(strategy.tokenAddress).toString();
-        const balanceRaw = await getUserTokenBalance(
-          new PublicKey(strategy.tokenAddress)
-        );
-        const balance =
-          typeof balanceRaw === "bigint"
-            ? Number(balanceRaw)
-            : typeof balanceRaw === "number" && !isNaN(balanceRaw)
-            ? balanceRaw
-            : 0;
-        balances[mintStr] = balance;
-      } catch {
+        if (mintStr !== USDC_MINT.toString()) {
+          // Check if this is SOL native token
+          const SOL_MINT = "So11111111111111111111111111111111111111112";
+          if (mintStr === SOL_MINT) {
+            // For SOL, use getBalance instead of token account
+            const solBalance = await connection.getBalance(publicKey);
+            balances[mintStr] = solBalance / 1e9; // Convert lamports to SOL
+            console.log(`💰 SOL balance for pool: ${balances[mintStr]} SOL`);
+          } else {
+            // For other SPL tokens
+            const balanceRaw = await getUserTokenBalance(
+              new PublicKey(strategy.tokenAddress)
+            );
+            const balance =
+              typeof balanceRaw === "bigint"
+                ? Number(balanceRaw)
+                : typeof balanceRaw === "number" && !isNaN(balanceRaw)
+                  ? balanceRaw
+                  : 0;
+            balances[mintStr] = balance;
+          }
+        }
+      } catch (error) {
+        console.error(`Error getting balance for ${strategy.tokenAddress}:`, error);
         balances[new PublicKey(strategy.tokenAddress).toString()] = 0;
       }
     }
     setUserTokenBalances(balances);
-  }, [connected, publicKey, strategies, getUserTokenBalance]);
+  }, [connected, publicKey, connection, strategies, getUserTokenBalance]);
 
-  // --- Section Wallet SPL tokens ---
-  const [splTokens, setSplTokens] = useState<any[]>([]);
-  const [splLoading, setSplLoading] = useState(false);
+  // --- Section Wallet SPL tokens (removed unused variables) ---
 
   // Prix fictifs pour l'affichage (à remplacer par un fetch API si besoin)
   const TOKEN_PRICES: Record<string, number> = {
@@ -225,64 +346,63 @@ export default function LendingPage() {
     mSOL: 110,
   };
 
-  // Récupérer tous les tokens SPL du wallet
+  // SPL tokens section removed as it was unused
+
+  // Refs are defined above
+
   useEffect(() => {
-    const fetchSplTokens = async () => {
-      if (!connected || !publicKey) {
-        setSplTokens([]);
-        return;
-      }
-      setSplLoading(true);
-      try {
-        const resp = await connection.getParsedTokenAccountsByOwner(publicKey, {
-          programId: new PublicKey(
-            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-          ),
-        });
-        const tokens = resp.value
-          .map((acc) => {
-            const info = acc.account.data.parsed.info;
-            const mint = info.mint;
-            const amount = parseFloat(info.tokenAmount.uiAmountString || "0");
-            const decimals = info.tokenAmount.decimals;
-            // On tente de matcher avec TOKENS pour le logo/symbole, sinon fallback
-            const meta = TOKENS.find((t) => t.mint === mint) || {
-              symbol: mint.slice(0, 4) + "...",
-              icon: "/images/tokens/unknown.png",
-              decimals,
-            };
-            const price = TOKEN_PRICES[meta.symbol] || 0;
-            return {
-              mint,
-              symbol: meta.symbol,
-              icon:
-                meta.icon ||
-                `/images/tokens/${meta.symbol?.toLowerCase?.()}.png`,
-              amount,
-              value: amount * price,
-              decimals,
-            };
-          })
-          .filter((t) => t.amount > 0);
-        setSplTokens(tokens);
-      } catch (e) {
-        setSplTokens([]);
-      } finally {
-        setSplLoading(false);
+    console.log("🔧 useEffect for loadPoolsData triggered - connected:", connected, "publicKey:", !!publicKey);
+    
+    if (loadingRef.current) {
+      console.log("🔧 loadingRef.current is true, returning early");
+      return;
+    }
+
+    if (!connected || !publicKey) {
+      console.log("🔧 Not connected or no publicKey, skipping loadPoolsData");
+      return;
+    }
+
+    // Reset mounted ref when wallet connects
+    mountedRef.current = true;
+    console.log("🔧 Reset mountedRef to true");
+
+    // Débounce pour éviter les appels trop fréquents
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    timeoutRef.current = setTimeout(() => {
+      console.log("🔧 Timeout executed, calling loadPoolsData");
+      loadingRef.current = true;
+      loadPoolsData().finally(() => {
+        loadingRef.current = false;
+      });
+    }, 100); // Délai de 100ms
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
     };
-    fetchSplTokens();
-  }, [connected, publicKey, connection]);
+  }, [connected, publicKey, loadPoolsData]); // Added loadPoolsData dependency
 
   useEffect(() => {
-    loadPoolsData();
-  }, [loadPoolsData]);
-
-  useEffect(() => {
-    if (strategies.length > 0) {
+    if (connected && publicKey && strategies.length > 0) {
       loadUserBalances();
     }
-  }, [loadUserBalances, strategies]);
+  }, [connected, publicKey, strategies.length]); // Seulement dépendant de strategies.length
+
+  // Cleanup au démontage
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      loadingRef.current = false;
+    };
+  }, []);
 
   // Filtrage et tri des pools (optimisé avec useMemo)
   const filteredPools = useMemo(
@@ -345,97 +465,136 @@ export default function LendingPage() {
   );
 
   // Handlers pour les actions des pools
-  const handleDeposit = async (poolId: string, amount: number) => {
-    if (!connected || !publicKey) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    try {
-      const strategy = strategies.find((s) => s.id === poolId);
-      if (!strategy) throw new Error("Strategy not found");
-
-      const tokenMint = new PublicKey(strategy.tokenAddress);
-      await deposit(tokenMint, amount);
-      toast.success(`Successfully deposited ${amount} ${strategy.tokenSymbol}`);
-
-      // Recharger les données
-      await loadPoolsData();
-      await loadUserBalances();
-    } catch (error) {
-      console.error("Deposit error:", error);
-      toast.error("Deposit failed");
-    }
-  };
-
-  const handleWithdraw = async (poolId: string, amount: number) => {
-    if (!connected || !publicKey) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    try {
-      const strategy = strategies.find((s) => s.id === poolId);
-      if (!strategy) throw new Error("Strategy not found");
-
-      const tokenMint = new PublicKey(strategy.tokenAddress);
-      await withdraw(tokenMint, amount);
-      toast.success(`Successfully withdrew ${amount} ${strategy.tokenSymbol}`);
-
-      // Recharger les données
-      await loadPoolsData();
-      await loadUserBalances();
-    } catch (error) {
-      console.error("Withdraw error:", error);
-      toast.error("Withdraw failed");
-    }
-  };
-
-  const handleRedeem = async (poolId: string) => {
-    if (!connected || !publicKey) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    try {
-      const strategy = strategies.find((s) => s.id === poolId);
-      if (!strategy) throw new Error("Strategy not found");
-
-      const pool = pools.find((p) => p.id === poolId);
-      if (!pool || !pool.userDeposit || pool.userDeposit <= 0) {
-        toast.error("No deposits found to redeem");
+  const handleDeposit = useCallback(
+    async (poolId: string, amount: number) => {
+      if (!connected || !publicKey) {
+        toast.error("Please connect your wallet");
         return;
       }
 
-      // Récupérer le solde yield du user en respectant le ratio 1:1
-      const userYTBalance = pool.userYieldEarned || 0;
-      if (userYTBalance <= 0) {
-        toast.error("No yield tokens to redeem");
+      try {
+        const strategy = strategies.find((s) => s.id === poolId);
+        if (!strategy) throw new Error("Strategy not found");
+
+        const tokenMint = new PublicKey(strategy.tokenAddress);
+        await deposit(tokenMint, amount, strategy.strategyId, strategy.id);
+        toast.success(
+          `Successfully deposited ${amount} ${strategy.tokenSymbol}`
+        );
+
+        // Recharger les données seulement si nécessaire
+        loadingRef.current = false; // Reset loading flag
+        await loadPoolsData();
+        await loadUserBalances();
+      } catch (error) {
+        console.error("Deposit error:", error);
+        toast.error("Deposit failed");
+      }
+    },
+    [connected, publicKey, strategies, deposit, loadPoolsData, loadUserBalances]
+  );
+
+  const handleWithdraw = useCallback(
+    async (poolId: string, amount: number) => {
+      if (!connected || !publicKey) {
+        toast.error("Please connect your wallet");
         return;
       }
 
-      const tokenMint = new PublicKey(strategy.tokenAddress);
+      try {
+        const strategy = strategies.find((s) => s.id === poolId);
+        if (!strategy) throw new Error("Strategy not found");
 
-      // Appel de la redeem
-      await redeem(tokenMint, userYTBalance);
+        const tokenMint = new PublicKey(strategy.tokenAddress);
+        await withdraw(tokenMint, amount);
+        toast.success(
+          `Successfully withdrew ${amount} ${strategy.tokenSymbol}`
+        );
 
-      toast.success(
-        `Successfully redeemed ${userYTBalance.toFixed(6)} ${
-          strategy.tokenSymbol
-        } yield tokens`
-      );
+        // Recharger les données seulement si nécessaire
+        loadingRef.current = false; // Reset loading flag
+        await loadPoolsData();
+        await loadUserBalances();
+      } catch (error) {
+        console.error("Withdraw error:", error);
+        toast.error("Withdraw failed");
+      }
+    },
+    [
+      connected,
+      publicKey,
+      strategies,
+      withdraw,
+      loadPoolsData,
+      loadUserBalances,
+    ]
+  );
 
-      // Recharger les données
-      await loadPoolsData();
-      await loadUserBalances();
-    } catch (error) {
-      console.error("Redeem error:", error);
-      toast.error(
-        "Redeem failed: " +
-          (error instanceof Error ? error.message : "Unknown error")
-      );
-    }
-  };
+  const handleRedeem = useCallback(
+    async (poolId: string) => {
+      if (!connected || !publicKey) {
+        toast.error("Please connect your wallet");
+        return;
+      }
+
+      try {
+        const strategy = strategies.find((s) => s.id === poolId);
+        if (!strategy) throw new Error("Strategy not found");
+
+        const pool = pools.find((p) => p.id === poolId);
+        if (!pool || !pool.userDeposit || pool.userDeposit <= 0) {
+          toast.error("No deposits found to redeem");
+          return;
+        }
+
+        // Récupérer le solde yield du user en respectant le ratio 1:1
+        const userYTBalance = pool.userYieldEarned || 0;
+        if (userYTBalance <= 0) {
+          toast.error("No yield tokens to redeem");
+          return;
+        }
+
+        const tokenMint = new PublicKey(strategy.tokenAddress);
+
+        // Appel de la redeem with strategy information
+        await redeem(tokenMint, userYTBalance, strategy.strategyId, strategy.id);
+
+        toast.success(
+          `Successfully redeemed ${userYTBalance.toFixed(6)} ${
+            strategy.tokenSymbol
+          } yield tokens`
+        );
+
+        // Recharger les données seulement si nécessaire
+        loadingRef.current = false; // Reset loading flag
+        await loadPoolsData();
+        await loadUserBalances();
+      } catch (error) {
+        console.error("Redeem error:", error);
+        
+        // Show user-friendly error message
+        let errorMessage = "Redeem failed";
+        if (error instanceof Error) {
+          if (error.message.includes('7 days after your initial deposit')) {
+            errorMessage = error.message; // Use the user-friendly message from useLendingSimplified
+          } else {
+            errorMessage = `Redeem failed: ${error.message}`;
+          }
+        }
+        
+        toast.error(errorMessage);
+      }
+    },
+    [
+      connected,
+      publicKey,
+      strategies,
+      pools,
+      redeem,
+      loadPoolsData,
+      loadUserBalances,
+    ]
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground pt-20">
@@ -534,28 +693,60 @@ export default function LendingPage() {
               <option value="High">High Risk</option>
             </select>
           </div>
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="activeOnly"
-              checked={filters.activeOnly}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  activeOnly: e.target.checked,
-                }))
-              }
-              className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent/50 focus:ring-2"
-            />
-            <label
-              htmlFor="activeOnly"
-              className="text-muted-foreground text-sm font-medium whitespace-nowrap"
-            >
-              Active pools only
-            </label>
+          <div className="flex items-center space-x-6">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="activeOnly"
+                checked={filters.activeOnly}
+                onChange={(e) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    activeOnly: e.target.checked,
+                  }))
+                }
+                className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent/50 focus:ring-2"
+              />
+              <label
+                htmlFor="activeOnly"
+                className="text-muted-foreground text-sm font-medium whitespace-nowrap"
+              >
+                Active pools only
+              </label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="devMode"
+                checked={devMode}
+                onChange={(e) => setDevMode(e.target.checked)}
+                className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent/50 focus:ring-2"
+              />
+              <label
+                htmlFor="devMode"
+                className="text-muted-foreground text-sm font-medium whitespace-nowrap"
+              >
+                Dev mode
+              </label>
+            </div>
           </div>
         </div>
       </section>
+
+      {/* Debug rapide : nombre de stratégies et pools */}
+      {devMode && (
+        <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] mb-2">
+          <div className="text-xs text-muted-foreground flex flex-wrap gap-4">
+            <div>Strategies: {strategies.length}</div>
+            <div>Pools: {pools.length}</div>
+            <div>Filtered: {filteredPools.length}</div>
+          </div>
+          {/* Debug log */}
+          <pre className="text-xs text-muted-foreground bg-muted rounded p-2 overflow-x-auto max-h-32 mt-2">
+            {JSON.stringify({ strategies, pools, filteredPools }, null, 2)}
+          </pre>
+        </section>
+      )}
 
       {/* Pools Grid */}
       <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] pb-16">
@@ -597,7 +788,8 @@ export default function LendingPage() {
                     userTokenBalance={userTokenBalances[mintStr] || 0}
                     onDeposit={(amount) => handleDeposit(pool.id, amount)}
                     onWithdraw={(amount) => handleWithdraw(pool.id, amount)}
-                    onRedeem={() => handleRedeem(pool.id)}
+                    onRedeem={handleRedeem}
+                    checkRedeemAvailability={checkRedeemAvailability}
                     loading={loading}
                   />
                 );

@@ -2,7 +2,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 
 // Adresses des wallets administrateurs autorisés
 const ADMIN_WALLET_ADDRESSES = [
-  '9HrzbxQYaaiGei6WvLDVKQEHgsS2Q5d4EbqP8LFAFtBm',
+  '9JNZJADgviPnQWKz6sCrXiqvwVwRWcCKmicGYUD2hkdZ',
+  '7bLqvdXRBHAXGpVXYVa9La1WUjCv4TbqaEjTnU3zmETB'
 ];
 
 export const useAdminAccess = () => {

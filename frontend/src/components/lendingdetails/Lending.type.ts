@@ -13,6 +13,7 @@ export interface LendingPool {
   totalYieldDistributed: number;
   userDeposit?: number;
   userYieldEarned?: number;
+  userDepositTime?: number; // Unix timestamp of user's deposit
   isActive: boolean;
   description: string;
   riskLevel: "Low" | "Medium" | "High";
@@ -21,6 +22,7 @@ export interface LendingPool {
 
 export interface Strategy {
   id: string;
+  strategyId: number;
   tokenAddress: string;
   rewardApy: number;
   name: string;

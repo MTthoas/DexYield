@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MarketplaceIndexRouteImport } from './routes/marketplace/index'
 import { Route as LendingIndexRouteImport } from './routes/lending/index'
@@ -19,6 +20,11 @@ import { Route as AdminIndexMockRouteImport } from './routes/admin/index.mock'
 import { Route as ExploreHomeIndexRouteImport } from './routes/explore/home/index'
 import { Route as ExploreHomeIndexMockRouteImport } from './routes/explore/home/index.mock'
 
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -35,9 +41,9 @@ const LendingIndexRoute = LendingIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/admin/',
-  path: '/admin/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
 } as any)
 const MarketplaceIndexMockRoute = MarketplaceIndexMockRouteImport.update({
   id: '/marketplace/index/mock',
@@ -50,9 +56,9 @@ const LendingIndexMockRoute = LendingIndexMockRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexMockRoute = AdminIndexMockRouteImport.update({
-  id: '/admin/index/mock',
-  path: '/admin/index/mock',
-  getParentRoute: () => rootRouteImport,
+  id: '/index/mock',
+  path: '/index/mock',
+  getParentRoute: () => AdminRoute,
 } as any)
 const ExploreHomeIndexRoute = ExploreHomeIndexRouteImport.update({
   id: '/explore/home/',
@@ -67,7 +73,8 @@ const ExploreHomeIndexMockRoute = ExploreHomeIndexMockRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminIndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/admin/': typeof AdminIndexRoute
   '/lending': typeof LendingIndexRoute
   '/marketplace': typeof MarketplaceIndexRoute
   '/explore/home': typeof ExploreHomeIndexRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/lending/': typeof LendingIndexRoute
   '/marketplace/': typeof MarketplaceIndexRoute
@@ -104,6 +112,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/admin/'
     | '/lending'
     | '/marketplace'
     | '/explore/home'
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/admin/'
     | '/lending/'
     | '/marketplace/'
@@ -137,11 +147,10 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminIndexRoute: typeof AdminIndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
   LendingIndexRoute: typeof LendingIndexRoute
   MarketplaceIndexRoute: typeof MarketplaceIndexRoute
   ExploreHomeIndexRoute: typeof ExploreHomeIndexRoute
-  AdminIndexMockRoute: typeof AdminIndexMockRoute
   LendingIndexMockRoute: typeof LendingIndexMockRoute
   MarketplaceIndexMockRoute: typeof MarketplaceIndexMockRoute
   ExploreHomeIndexMockRoute: typeof ExploreHomeIndexMockRoute
@@ -149,6 +158,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -172,10 +188,10 @@ declare module '@tanstack/react-router' {
     }
     '/admin/': {
       id: '/admin/'
-      path: '/admin'
-      fullPath: '/admin'
+      path: '/'
+      fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/marketplace/index/mock': {
       id: '/marketplace/index/mock'
@@ -193,10 +209,10 @@ declare module '@tanstack/react-router' {
     }
     '/admin/index/mock': {
       id: '/admin/index/mock'
-      path: '/admin/index/mock'
+      path: '/index/mock'
       fullPath: '/admin/index/mock'
       preLoaderRoute: typeof AdminIndexMockRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/explore/home/': {
       id: '/explore/home/'
@@ -215,13 +231,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AdminRouteChildren {
+  AdminIndexRoute: typeof AdminIndexRoute
+  AdminIndexMockRoute: typeof AdminIndexMockRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminIndexRoute: AdminIndexRoute,
+  AdminIndexMockRoute: AdminIndexMockRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminIndexRoute: AdminIndexRoute,
+  AdminRoute: AdminRouteWithChildren,
   LendingIndexRoute: LendingIndexRoute,
   MarketplaceIndexRoute: MarketplaceIndexRoute,
   ExploreHomeIndexRoute: ExploreHomeIndexRoute,
-  AdminIndexMockRoute: AdminIndexMockRoute,
   LendingIndexMockRoute: LendingIndexMockRoute,
   MarketplaceIndexMockRoute: MarketplaceIndexMockRoute,
   ExploreHomeIndexMockRoute: ExploreHomeIndexMockRoute,
