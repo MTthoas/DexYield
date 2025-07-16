@@ -1,8 +1,8 @@
 import { PublicKey } from '@solana/web3.js';
 
 // Program IDs (matching the deployed contracts)
-export const LENDING_PROGRAM_ID = new PublicKey('GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo');
-export const MARKETPLACE_PROGRAM_ID = new PublicKey('Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv');
+export const LENDING_PROGRAM_ID = new PublicKey('BHByEUQjZokRDuBacssntFnQnWEsTnxe73B3ofhRTx1J');
+export const MARKETPLACE_PROGRAM_ID = new PublicKey('CEtQR5K9KSgK64fvugnP2PAQjXnq2ye4cxnadqYy4naF');
 
 // Token addresses (devnet)
 export const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
@@ -14,7 +14,7 @@ export const DEFAULT_POOL_OWNER = new PublicKey('6xKr3QyuZ2SY2egretDk9WYfnFzpae3
 // Devnet deployed addresses
 export const DEVNET_CONFIG = {
   lending: {
-    programId: new PublicKey('GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo'),
+    programId: new PublicKey('BHByEUQjZokRDuBacssntFnQnWEsTnxe73B3ofhRTx1J'),
     pool: new PublicKey('A84c4123zxFKZUXgPRSvsfsr8EZTiv61HgGd9zZux1cP'),
     ytMint: new PublicKey('BqbZQSqgfyD9h6wFePtEAGsJX4efQoqe9VCrAX2WA2PC'),
     strategy: new PublicKey('6W3aXpenbuLywon1ZCwUwVEA3BjNEqpt61PWzCFucYgS'),
@@ -23,7 +23,7 @@ export const DEVNET_CONFIG = {
     authority: new PublicKey('CxpdhJdTRRbJFjwj7uoUF69XjeoThmvirar3CgpgXQda'),
   },
   marketplace: {
-    programId: new PublicKey('Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv'),
+    programId: new PublicKey('CEtQR5K9KSgK64fvugnP2PAQjXnq2ye4cxnadqYy4naF'),
     strategy: new PublicKey('EtQQo2D2NbyjLE22Rm4Zoj18YHaRxDcS9NyyHGKWWtqM'),
     listing: new PublicKey('AYyihgcAZcvFBpy12ZchpZ4bFr5vhZFspBf5a32nm5X2'),
     escrowAuthority: new PublicKey('G4AEgwaTpLQvj1CXhVFNm5oKof2UP5qAbexo9stHNHUi'),

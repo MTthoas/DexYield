@@ -1,5 +1,5 @@
 {
-  "address": "GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo",
+  "address": "BHByEUQjZokRDuBacssntFnQnWEsTnxe73B3ofhRTx1J",
   "metadata": {
     "name": "lending",
     "version": "0.1.0",
@@ -157,6 +157,14 @@
               {
                 "kind": "account",
                 "path": "token_address"
+              },
+              {
+                "kind": "account",
+                "path": "admin"
+              },
+              {
+                "kind": "arg",
+                "path": "strategy_id"
               }
             ]
           }
@@ -170,6 +178,10 @@
         }
       ],
       "args": [
+        {
+          "name": "strategy_id",
+          "type": "u64"
+        },
         {
           "name": "reward_apy",
           "type": "u64"
@@ -1149,12 +1161,25 @@
                 "kind": "account",
                 "path": "strategy.token_address",
                 "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "admin"
+              },
+              {
+                "kind": "arg",
+                "path": "strategy_id"
               }
             ]
           }
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "strategy_id",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "withdraw",
@@ -1487,6 +1512,14 @@
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "strategy_id",
+            "type": "u64"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
           {
             "name": "token_address",
             "type": "pubkey"

@@ -16,6 +16,9 @@ import {
 } from "@/lib/constants";
 import type { LendingPool, PoolFilters, Strategy } from "./Lending.type";
 import { WalletInfo } from "@/components/WalletInfo";
+import { useAdminAccess } from "@/hooks/useAdminAccess";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 // Simple toast utility
 const toast = {
   success: (message: string) => {
@@ -52,9 +55,23 @@ const getBNNumber = (val: any) => {
 };
 const createPoolsFromStrategies = (
   strategies: Strategy[],
-  userDeposits?: any[]
+  userDeposits?: any[],
+  poolData?: any
 ): LendingPool[] => {
-  return strategies.map((strategy) => {
+  // Remove duplicates based on strategy ID
+  const uniqueStrategies = strategies.reduce((acc, strategy) => {
+    const existingStrategy = acc.find((s) => s.id === strategy.id);
+    if (!existingStrategy) {
+      acc.push(strategy);
+    }
+    return acc;
+  }, [] as Strategy[]);
+
+  console.log(
+    `🔍 Creating pools: ${strategies.length} strategies → ${uniqueStrategies.length} unique strategies`
+  );
+
+  return uniqueStrategies.map((strategy) => {
     const tokenAddressStr = getPubkeyString(strategy.tokenAddress);
     const tokenConfig = TOKENS.find((t) => t.mint === tokenAddressStr);
     const userDeposit = userDeposits?.find((d) => d.strategy === strategy.id);
@@ -62,7 +79,7 @@ const createPoolsFromStrategies = (
     const rewardApy = getBNNumber(strategy.rewardApy);
     const totalDeposited = getBNNumber(strategy.totalDeposited);
     const createdAt = getBNNumber(strategy.createdAt);
-    // Calcul TVL basé sur les dépôts totaux avec prix fictifs
+    // Calcul TVL basé sur les vraies données du pool
     const tokenPrice =
       strategy.tokenSymbol === "USDC"
         ? 1
@@ -71,26 +88,45 @@ const createPoolsFromStrategies = (
           : strategy.tokenSymbol === "mSOL"
             ? 110
             : 1;
-    // Si totalDeposited est 0, utiliser le dépôt utilisateur comme fallback pour le TVL
+
     const userDepositAmount = userDeposit ? getBNNumber(userDeposit.amount) : 0;
 
-    // Pour le TVL, utiliser au minimum le dépôt utilisateur s'il existe
-    const tvlDeposits = Math.max(totalDeposited, userDepositAmount);
+    // Utiliser les données du pool en priorité, sinon fallback
+    const poolTotalDeposits = poolData
+      ? getBNNumber(poolData.totalDeposits)
+      : 0;
 
-    const tvl =
-      (tvlDeposits / Math.pow(10, tokenConfig?.decimals || 6)) * tokenPrice;
+    // Somme des dépôts: pool total + dépôts individuels des utilisateurs
+    const totalUserDeposits = totalDeposited;
+    const calculatedTotalDeposits = Math.max(
+      poolTotalDeposits,
+      totalUserDeposits,
+      userDepositAmount,
+      0 // Ensure minimum of 0
+    );
+
+    // TVL basé sur les vrais dépôts totaux - si pas de dépôts, afficher 0
+    const tvlInTokens =
+      calculatedTotalDeposits > 0
+        ? calculatedTotalDeposits / Math.pow(10, tokenConfig?.decimals || 6)
+        : 0;
+
+    const tvl = tvlInTokens * tokenPrice;
 
     // Debug TVL calculation
-    console.log(`🔍 TVL Debug for ${strategy.name}:`, {
-      totalDeposited,
-      userDepositAmount,
-      tvlDeposits,
-      tokenDecimals: tokenConfig?.decimals || 6,
-      tokenPrice,
-      calculatedTVL: tvl,
-      tokenSymbol: strategy.tokenSymbol,
-      userDeposit: userDeposit,
-    });
+    // console.log(`🔍 TVL Debug for ${strategy.name}:`, {
+    //   totalDeposited,
+    //   userDepositAmount,
+    //   poolTotalDeposits,
+    //   calculatedTotalDeposits,
+    //   tvlInTokens,
+    //   tokenDecimals: tokenConfig?.decimals || 6,
+    //   tokenPrice,
+    //   calculatedTVL: tvl,
+    //   tokenSymbol: strategy.tokenSymbol,
+    //   userDeposit: userDeposit,
+    //   poolData: poolData,
+    // });
     return {
       id: strategy.id,
       name: strategy.name,
@@ -101,11 +137,8 @@ const createPoolsFromStrategies = (
         icon: `/images/tokens/${strategy.tokenSymbol?.toLowerCase?.()}.png`,
       },
       apy: rewardApy / 100, // Convertir basis points en pourcentage
-      tvl: tvl,
-      totalDeposits: totalDeposited / Math.pow(10, tokenConfig?.decimals || 6),
-      totalYieldDistributed:
-        (totalDeposited * (rewardApy / 10000) * 0.1) /
-        Math.pow(10, tokenConfig?.decimals || 6),
+      tvl: tvl, // Toujours dynamique
+      totalDeposits: tvlInTokens, // Toujours dynamique
       userDeposit: userDeposit
         ? getBNNumber(userDeposit.amount) /
           Math.pow(10, tokenConfig?.decimals || 6)
@@ -131,8 +164,15 @@ const createPoolsFromStrategies = (
 export default function LendingPage() {
   const { connected, publicKey } = useWallet();
   const { connection } = useConnection();
-  const { fetchStrategies, getUserTokenBalance, getUserDeposit, loading } =
-    useLending();
+  const { isAdmin } = useAdminAccess();
+  const {
+    fetchStrategies,
+    getUserTokenBalance,
+    getUserDeposit,
+    getPool,
+    loading,
+    toggleStrategyStatus,
+  } = useLending();
   const {
     deposit,
     withdraw,
@@ -147,7 +187,7 @@ export default function LendingPage() {
   const [userTokenBalances, setUserTokenBalances] = useState<
     Record<string, number>
   >({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // Par défaut false
   const [filters, setFilters] = useState<PoolFilters>({
     search: "",
     sortBy: "apy",
@@ -155,6 +195,7 @@ export default function LendingPage() {
     activeOnly: true,
   });
   const [devMode, setDevMode] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // Refs for component lifecycle management
   const mountedRef = useRef(true);
@@ -163,22 +204,25 @@ export default function LendingPage() {
 
   // Charger les stratégies et pools
   const loadPoolsData = useCallback(async () => {
-    console.log("🔍 loadPoolsData called - mounted:", mountedRef.current);
-    
-    // Don't check mounted here - let it execute and check later
-    // if (!mountedRef.current) return;
-
+    if (!connected || !publicKey) {
+      setIsLoading(false); // Ne pas loader si pas connecté
+      return;
+    }
     setIsLoading(true);
     try {
       console.log("📞 Calling fetchStrategies...");
       const strategiesDataRaw = await fetchStrategies();
       console.log("📈 strategiesDataRaw received:", strategiesDataRaw);
-      
+
       const strategiesData = Array.isArray(strategiesDataRaw)
         ? strategiesDataRaw
         : [];
-      console.log("📊 strategiesData processed:", strategiesData.length, "items");
-      
+      console.log(
+        "📊 strategiesData processed:",
+        strategiesData.length,
+        "items"
+      );
+
       if (!strategiesDataRaw) {
         console.error(
           "[DEBUG] fetchStrategies returned falsy value:",
@@ -192,6 +236,15 @@ export default function LendingPage() {
 
       if (strategiesData.length > 0) {
         let userDeposits: any[] = [];
+        // Récupérer les données du pool pour le TVL
+        let poolData = null;
+        try {
+          poolData = await getPool(DEFAULT_POOL_OWNER);
+          console.log("🏊 Pool data:", poolData);
+        } catch (error) {
+          console.error("Error fetching pool data:", error);
+        }
+
         if (connected && publicKey) {
           try {
             userDeposits = await Promise.all(
@@ -200,11 +253,21 @@ export default function LendingPage() {
                   console.log(
                     `🔍 Fetching deposit for strategy ${strategy.id}...`
                   );
+
+                  // Utiliser le PublicKey de la stratégie directement (pas besoin de new PublicKey)
+                  const strategyPubkey = new PublicKey(strategy.id);
                   const depositRaw = await getUserDeposit(
-                    DEFAULT_POOL_OWNER,
-                    new PublicKey(strategy.id)
+                    publicKey,
+                    strategyPubkey
                   );
-                  console.log(`🔍 depositRaw for ${strategy.id}:`, depositRaw);
+                  console.log(`🔍 depositRaw for ${strategy.id}:`, depositRaw, {
+                    strategyId: strategy.id,
+                    strategyPubkey: strategyPubkey.toBase58(),
+                    owner: DEFAULT_POOL_OWNER,
+                    tokenSymbol: strategy.tokenSymbol,
+                    tokenAddress: strategy.tokenAddress,
+                    publicKey: publicKey?.toBase58?.() || publicKey,
+                  });
 
                   if (
                     depositRaw &&
@@ -243,7 +306,8 @@ export default function LendingPage() {
         console.log("🏊 Creating pools from strategies...");
         const poolsData = createPoolsFromStrategies(
           strategiesData,
-          userDeposits
+          userDeposits,
+          poolData
         );
         console.log("🏊 Pools created:", poolsData.length, "pools");
         console.log("🏊 Pools data:", poolsData);
@@ -261,12 +325,17 @@ export default function LendingPage() {
         setPools([]);
       }
     } finally {
-      console.log("🔚 loadPoolsData finally block - mounted:", mountedRef.current);
+      console.log(
+        "🔚 loadPoolsData finally block - mounted:",
+        mountedRef.current
+      );
       if (mountedRef.current) {
         setIsLoading(false);
         console.log("✅ Set isLoading to false");
       } else {
-        console.log("❌ Not setting isLoading to false because component is unmounted");
+        console.log(
+          "❌ Not setting isLoading to false because component is unmounted"
+        );
       }
     }
   }, [fetchStrategies, getUserDeposit, connected, publicKey]);
@@ -303,6 +372,32 @@ export default function LendingPage() {
       balances[USDC_MINT.toString()] = 0;
     }
 
+    // Récupérer les balances YT tokens
+    try {
+      const ytMintAddress = new PublicKey(DEVNET_CONFIG.lending.ytMint);
+      const ytBalanceRaw = await getUserTokenBalance(ytMintAddress);
+      let ytBalance = 0;
+      if (
+        ytBalanceRaw &&
+        typeof ytBalanceRaw === "object" &&
+        "balance" in ytBalanceRaw
+      ) {
+        ytBalance = ytBalanceRaw.balance
+          ? Number(ytBalanceRaw.balance) / Math.pow(10, 6) // YT decimals = 6
+          : 0;
+      } else if (typeof ytBalanceRaw === "bigint") {
+        ytBalance = Number(ytBalanceRaw) / Math.pow(10, 6);
+      } else if (typeof ytBalanceRaw === "number" && !isNaN(ytBalanceRaw)) {
+        ytBalance = ytBalanceRaw / Math.pow(10, 6);
+      }
+
+      balances["YT"] = ytBalance;
+      console.log("🪙 YT Balance:", ytBalance);
+    } catch (error) {
+      console.error("Error loading YT balance:", error);
+      balances["YT"] = 0;
+    }
+
     // Récupérer les balances pour les autres stratégies
     for (const strategy of strategies) {
       try {
@@ -330,7 +425,10 @@ export default function LendingPage() {
           }
         }
       } catch (error) {
-        console.error(`Error getting balance for ${strategy.tokenAddress}:`, error);
+        console.error(
+          `Error getting balance for ${strategy.tokenAddress}:`,
+          error
+        );
         balances[new PublicKey(strategy.tokenAddress).toString()] = 0;
       }
     }
@@ -351,8 +449,13 @@ export default function LendingPage() {
   // Refs are defined above
 
   useEffect(() => {
-    console.log("🔧 useEffect for loadPoolsData triggered - connected:", connected, "publicKey:", !!publicKey);
-    
+    console.log(
+      "🔧 useEffect for loadPoolsData triggered - connected:",
+      connected,
+      "publicKey:",
+      !!publicKey
+    );
+
     if (loadingRef.current) {
       console.log("🔧 loadingRef.current is true, returning early");
       return;
@@ -530,6 +633,33 @@ export default function LendingPage() {
     ]
   );
 
+  // Handle toggle strategy status
+  const handleToggleStrategy = useCallback(
+    async (strategy: Strategy) => {
+      if (!connected || !publicKey) {
+        toast.error("Please connect your wallet");
+        return;
+      }
+
+      try {
+        const tokenMint = new PublicKey(strategy.tokenAddress);
+        await toggleStrategyStatus(tokenMint, strategy.strategyId);
+
+        toast.success(
+          `Strategy ${strategy.active ? "deactivated" : "activated"} successfully`
+        );
+
+        // Reload data
+        loadingRef.current = false;
+        await loadPoolsData();
+      } catch (error) {
+        console.error("Toggle strategy error:", error);
+        toast.error("Failed to toggle strategy status");
+      }
+    },
+    [connected, publicKey, toggleStrategyStatus, loadPoolsData]
+  );
+
   const handleRedeem = useCallback(
     async (poolId: string) => {
       if (!connected || !publicKey) {
@@ -557,7 +687,12 @@ export default function LendingPage() {
         const tokenMint = new PublicKey(strategy.tokenAddress);
 
         // Appel de la redeem with strategy information
-        await redeem(tokenMint, userYTBalance, strategy.strategyId, strategy.id);
+        await redeem(
+          tokenMint,
+          userYTBalance,
+          strategy.strategyId,
+          strategy.id
+        );
 
         toast.success(
           `Successfully redeemed ${userYTBalance.toFixed(6)} ${
@@ -571,17 +706,17 @@ export default function LendingPage() {
         await loadUserBalances();
       } catch (error) {
         console.error("Redeem error:", error);
-        
+
         // Show user-friendly error message
         let errorMessage = "Redeem failed";
         if (error instanceof Error) {
-          if (error.message.includes('7 days after your initial deposit')) {
+          if (error.message.includes("1 hour after your initial deposit")) {
             errorMessage = error.message; // Use the user-friendly message from useLendingSimplified
           } else {
             errorMessage = `Redeem failed: ${error.message}`;
           }
         }
-        
+
         toast.error(errorMessage);
       }
     },
@@ -620,10 +755,10 @@ export default function LendingPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="bg-card border border-border shadow-sm">
             <CardContent className="p-6 text-center">
-              <div className="text-3xl font-bold mb-1">
+              <div className="text-3xl font-bold mb-1 text-green-400">
                 $
                 {totalTVL.toLocaleString(undefined, {
-                  maximumFractionDigits: 0,
+                  maximumFractionDigits: 2,
                 })}
               </div>
               <div className="text-muted-foreground text-xs">
@@ -729,9 +864,113 @@ export default function LendingPage() {
                 Dev mode
               </label>
             </div>
+            {isAdmin && (
+              <Button
+                onClick={() => setShowAdminPanel(!showAdminPanel)}
+                variant="outline"
+                size="sm"
+                className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 hover:border-orange-500/50"
+              >
+                {showAdminPanel ? "Hide Admin" : "Manage Strategies"}
+              </Button>
+            )}
           </div>
         </div>
       </section>
+
+      {/* Section Admin pour gérer les stratégies */}
+      {isAdmin && showAdminPanel && (
+        <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] mb-8">
+          <Card className="bg-orange-950/20 border border-orange-500/30 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                <h3 className="text-xl font-bold text-orange-400">
+                  Admin Panel - Manage Strategies
+                </h3>
+              </div>
+
+              {strategies.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No strategies found</p>
+                  <Button
+                    onClick={() => loadPoolsData()}
+                    variant="outline"
+                    className="mt-4 border-border text-foreground hover:bg-muted"
+                  >
+                    Refresh
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {strategies.map((strategy, index) => (
+                    <div
+                      key={strategy.id || index}
+                      className="p-4 bg-card/50 border border-border rounded-lg"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="text-lg font-semibold text-foreground">
+                              {strategy.name ||
+                                `Strategy ${strategy.strategyId}`}
+                            </h4>
+                            <Badge
+                              variant={
+                                strategy.active ? "default" : "secondary"
+                              }
+                              className={
+                                strategy.active
+                                  ? "bg-green-500/20 text-green-400 border-green-500/30"
+                                  : "bg-red-500/20 text-red-400 border-red-500/30"
+                              }
+                            >
+                              {strategy.active ? "Active" : "Inactive"}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground text-sm mb-2">
+                            {strategy.description || "No description"}
+                          </p>
+                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                            <span>Token: {strategy.tokenSymbol}</span>
+                            <span>
+                              APY: {(strategy.rewardApy / 100).toFixed(2)}%
+                            </span>
+                            <span>ID: {strategy.strategyId}</span>
+                          </div>
+                        </div>
+                        <div className="ml-6">
+                          <Button
+                            onClick={() => handleToggleStrategy(strategy)}
+                            variant={
+                              strategy.active ? "destructive" : "default"
+                            }
+                            size="sm"
+                            className={
+                              strategy.active
+                                ? "bg-red-600 hover:bg-red-700 text-white"
+                                : "bg-green-600 hover:bg-green-700 text-white"
+                            }
+                            disabled={loading}
+                          >
+                            {loading ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : strategy.active ? (
+                              "Deactivate"
+                            ) : (
+                              "Activate"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Debug rapide : nombre de stratégies et pools */}
       {devMode && (
@@ -750,7 +989,13 @@ export default function LendingPage() {
 
       {/* Pools Grid */}
       <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] pb-16">
-        {isLoading ? (
+        {!connected ? (
+          <div className="flex flex-col justify-center items-center py-24">
+            <span className="text-muted-foreground text-base">
+              Connect your wallet to view pools
+            </span>
+          </div>
+        ) : isLoading ? (
           <div className="flex flex-col justify-center items-center py-24">
             <div className="w-10 h-10 border-4 border-border border-t-accent rounded-full animate-spin mb-4"></div>
             <span className="text-muted-foreground text-base">
@@ -786,6 +1031,7 @@ export default function LendingPage() {
                     pool={pool}
                     userConnected={connected}
                     userTokenBalance={userTokenBalances[mintStr] || 0}
+                    userBalances={userTokenBalances}
                     onDeposit={(amount) => handleDeposit(pool.id, amount)}
                     onWithdraw={(amount) => handleWithdraw(pool.id, amount)}
                     onRedeem={handleRedeem}

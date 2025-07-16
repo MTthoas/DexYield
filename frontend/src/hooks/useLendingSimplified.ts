@@ -3,7 +3,8 @@ import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useContracts } from './useContracts';
 import { useLending } from './useLending';
-import { USDC_MINT, DEFAULT_POOL_OWNER, TOKEN_DECIMALS, DEVNET_CONFIG } from '../lib/constants';
+import { USDC_MINT, DEFAULT_POOL_OWNER, TOKEN_DECIMALS, DEVNET_CONFIG, LENDING_PROGRAM_ID } from '../lib/constants';
+import { BN } from '@coral-xyz/anchor';
 
 export const useLendingSimplified = () => {
   const { publicKey } = useWallet();
@@ -19,7 +20,7 @@ export const useLendingSimplified = () => {
     amount: number,
     strategyId: number,
     strategyAddress: string, // Add the actual strategy address
-    poolOwner: PublicKey = DEFAULT_POOL_OWNER
+    poolOwner: PublicKey = publicKey // Use connected wallet as pool owner
   ) => {
     if (!contractService || !publicKey) {
       throw new Error('Wallet not connected or contract service not available');
@@ -34,12 +35,17 @@ export const useLendingSimplified = () => {
       console.log('Amount:', amount);
       console.log('Pool owner:', poolOwner.toString());
 
-      // Use the actual deployed strategy address instead of calculating PDA
-      const strategyPDA = new PublicKey(strategyAddress);
-      console.log('🎯 Using actual deployed strategy:', strategyPDA.toString());
-      
-      // Calculate other PDAs manually using the correct program ID
-      const { LENDING_PROGRAM_ID } = await import("../lib/constants");
+      // Calculate strategy PDA using the corrected pattern (now consistent everywhere)
+      const [strategyPDA] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from("strategy"),
+          tokenMint.toBuffer(),
+          publicKey.toBuffer(),
+          Buffer.from(new BN(strategyId).toArray('le', 8))
+        ],
+        LENDING_PROGRAM_ID
+      );
+      console.log('🎯 Using consistent strategy PDA:', strategyPDA.toString());
       
       const [poolPDA] = await PublicKey.findProgramAddress(
         [Buffer.from("lending_pool"), poolOwner.toBuffer()],
@@ -113,8 +119,110 @@ export const useLendingSimplified = () => {
 
       console.log('💰 Amount with decimals:', amountBN);
 
-      // Skip pool and strategy initialization since they're already deployed
-      console.log('✅ Using deployed pool and strategy');
+      // Check if pool exists and initialize if needed
+      console.log('🔍 Checking if pool exists...');
+      try {
+        await contractService.getPool(poolOwner);
+        console.log('✅ Pool already exists');
+      } catch (poolError) {
+        console.log('❌ Pool not found, initializing...');
+        try {
+          // First, create the vault account if it doesn't exist
+          console.log('🔧 Creating vault account...');
+          const vaultAccountInfo = await contractService.tokenAccountManager.connection.getAccountInfo(accounts.vaultAccount);
+          if (!vaultAccountInfo) {
+            console.log('❌ Vault account not found, creating...');
+            const { createAssociatedTokenAccountInstruction } = await import("@solana/spl-token");
+            const { Transaction } = await import("@solana/web3.js");
+            
+            const vaultTransaction = new Transaction();
+            const createVaultInstruction = createAssociatedTokenAccountInstruction(
+              publicKey, // payer
+              accounts.vaultAccount, // ata
+              accounts.poolPDA, // owner (the pool PDA owns the vault)
+              tokenMint // mint
+            );
+            vaultTransaction.add(createVaultInstruction);
+            console.log('➕ Added create vault account instruction');
+            
+            // Get connection and wallet
+            const provider = contractService.lendingProgram?.provider;
+            if (!provider || !provider.connection || !provider.wallet) {
+              throw new Error('Provider not available');
+            }
+            
+            // Send and confirm transaction
+            console.log('📤 Sending vault account creation transaction...');
+            vaultTransaction.feePayer = publicKey;
+            vaultTransaction.recentBlockhash = (await provider.connection.getLatestBlockhash()).blockhash;
+            
+            const signedVaultTx = await provider.wallet.signTransaction(vaultTransaction);
+            const vaultTxId = await provider.connection.sendRawTransaction(signedVaultTx.serialize());
+            await provider.connection.confirmTransaction(vaultTxId);
+            
+            console.log('✅ Vault account creation transaction confirmed:', vaultTxId);
+            
+            // Wait a moment for the next transaction to get a different blockhash
+            console.log('⏳ Waiting for next blockhash...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            console.log('✅ Vault account already exists');
+          }
+          
+          // Now initialize the pool
+          console.log('🏊 Initializing pool...');
+          const initPoolTxId = await contractService.initializeLendingPool(
+            publicKey,
+            accounts.vaultAccount
+          );
+          console.log('✅ Pool initialized:', initPoolTxId);
+          
+          // Wait for confirmation
+          console.log('⏳ Waiting for pool initialization confirmation...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (initPoolError) {
+          console.error('❌ Failed to initialize pool:', initPoolError);
+          throw new Error('Failed to initialize pool');
+        }
+      }
+
+      // Check if strategy exists and create if needed
+      console.log('🔍 Checking if strategy exists...');
+      try {
+        // Check if strategy exists at the consistent PDA
+        const strategyAccountInfo = await contractService.lendingProgram?.provider.connection.getAccountInfo(strategyPDA);
+        if (strategyAccountInfo) {
+          console.log('✅ Strategy already exists at PDA:', strategyPDA.toString());
+        } else {
+          console.log('❌ Strategy not found, creating...');
+          try {
+            const createStrategyTxId = await contractService.createStrategy(
+              publicKey,
+              tokenMint,
+              strategyId,
+              5000, // 5% APY
+              "SOL High Yield Strategy",
+              "High yield strategy for SOL deposits"
+            );
+            console.log('✅ Strategy created:', createStrategyTxId);
+            
+            // Wait for confirmation
+            console.log('⏳ Waiting for strategy creation confirmation...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          } catch (createStrategyError) {
+            console.error('❌ Failed to create strategy:', createStrategyError);
+            // Check if the error is because the strategy already exists
+            if (createStrategyError.message && createStrategyError.message.includes('already in use')) {
+              console.log('✅ Strategy already exists (detected from creation error)');
+            } else {
+              throw new Error('Failed to create strategy');
+            }
+          }
+        }
+      } catch (strategyError) {
+        console.error('❌ Failed to check strategy:', strategyError);
+        throw new Error('Failed to check strategy');
+      }
 
       // Check if user deposit account exists and initialize if needed
       console.log('🔍 Checking if user deposit account exists...');
@@ -126,7 +234,7 @@ export const useLendingSimplified = () => {
         try {
           const initTxId = await contractService.initializeUserDeposit(
             publicKey,
-            poolOwner,
+            publicKey,
             strategyPDA
           );
           console.log('✅ User deposit account initialized:', initTxId);
@@ -186,8 +294,33 @@ export const useLendingSimplified = () => {
         }
       }
 
-      // YT token account will be created automatically by the deposit function if needed
-      console.log('✅ YT token account will be handled automatically');
+      // Check and create YT token account if needed
+      console.log('🔍 Checking YT token account...');
+      try {
+        const ytAccountInfo = await contractService.getTokenAccountInfo(accounts.ytMintPDA, publicKey);
+        
+        if (!ytAccountInfo.exists) {
+          console.log('❌ YT token account does not exist, creating...');
+          
+          // Create the YT token account
+          const createYtAccountTx = await contractService.createTokenAccount(
+            publicKey,
+            accounts.ytMintPDA,
+            publicKey
+          );
+          console.log('✅ YT token account created:', createYtAccountTx);
+          
+          // Wait for confirmation
+          console.log('⏳ Waiting for YT account creation confirmation...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          console.log('✅ YT token account already exists');
+        }
+      } catch (error) {
+        console.error('❌ Failed to check/create YT token account:', error);
+        // Try to continue anyway, let the contract handle it
+        console.log('⚠️ Proceeding with deposit, contract may handle YT account creation');
+      }
 
       // Check and create vault account if needed
       console.log('🔍 Checking vault account...');
@@ -334,12 +467,13 @@ export const useLendingSimplified = () => {
         console.log('⚠️ Proceeding with deposit, contract may handle vault creation');
       }
 
-      // Perform the deposit
+      // Perform the deposit using the consistent strategy PDA
       console.log('💸 Executing deposit...');
+      console.log('🔧 Using consistent strategy PDA:', strategyPDA.toString());
       const txId = await contractService.deposit(
         publicKey,
-        poolOwner,
-        strategyPDA,
+        publicKey,
+        strategyPDA, // Use the consistent PDA
         amountBN,
         accounts.userTokenAccount,
         accounts.userYtAccount,
@@ -626,7 +760,7 @@ export const useLendingSimplified = () => {
       let errorMessage = 'Unknown error';
       if (err instanceof Error) {
         if (err.message.includes('TooEarlyToRedeem') || err.message.includes('Trop tôt pour récupérer')) {
-          errorMessage = 'You must wait 7 days after your initial deposit before claiming yield tokens. This helps ensure protocol security and stability.';
+          errorMessage = 'You must wait 1 hour after your initial deposit before claiming yield tokens. This helps ensure protocol security and stability.';
         } else if (err.message.includes('InsufficientYieldTokens')) {
           errorMessage = 'Insufficient yield tokens available for redemption.';
         } else if (err.message.includes('PoolInactive')) {
@@ -643,10 +777,10 @@ export const useLendingSimplified = () => {
     }
   }, [contractService, publicKey]);
 
-  // Check if redeem is available based on 7-day minimum duration
+  // Check if redeem is available based on 1-hour minimum duration (POC)
   const checkRedeemAvailability = useCallback((depositTime: number) => {
-    const MIN_DURATION_DAYS = 7;
-    const MIN_DURATION_MS = MIN_DURATION_DAYS * 24 * 60 * 60 * 1000;
+    const MIN_DURATION_HOURS = 1;
+    const MIN_DURATION_MS = MIN_DURATION_HOURS * 60 * 60 * 1000;
     const currentTime = Date.now();
     const depositTimeMs = depositTime * 1000; // Convert from Unix timestamp to milliseconds
     

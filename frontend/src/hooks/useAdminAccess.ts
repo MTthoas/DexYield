@@ -6,10 +6,15 @@ const ADMIN_WALLET_ADDRESSES = [
   '7bLqvdXRBHAXGpVXYVa9La1WUjCv4TbqaEjTnU3zmETB'
 ];
 
+// Mode développement : permettre à tous les wallets d'être admin
+const DEV_MODE = true;
+
 export const useAdminAccess = () => {
   const { publicKey } = useWallet();
   
-  const isAdmin = publicKey ? ADMIN_WALLET_ADDRESSES.includes(publicKey.toString()) : false;
+  const isAdmin = publicKey ? 
+    (DEV_MODE || ADMIN_WALLET_ADDRESSES.includes(publicKey.toString())) : 
+    false;
   
   return {
     isAdmin,

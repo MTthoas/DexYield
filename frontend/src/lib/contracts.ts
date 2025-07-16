@@ -5,6 +5,7 @@ import {
   Connection,
   clusterApiUrl,
   Transaction,
+  ComputeBudgetProgram,
 } from "@solana/web3.js";
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Buffer } from "buffer";
@@ -241,6 +242,8 @@ export class ContractService {
     }
 
     const [poolPDA] = findLendingPoolPDA(creator);
+    const [ytMintPDA] = findYtMintPDA(creator);
+    const [poolAuthorityPDA] = findPoolAuthorityPDA(creator);
 
     return await this.lendingProgram.methods
       .initializeLendingPool()
@@ -248,8 +251,15 @@ export class ContractService {
         creator,
         pool: poolPDA,
         vaultAccount,
+        ytMint: ytMintPDA,
+        poolAuthority: poolAuthorityPDA,
+        tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: web3.SystemProgram.programId,
       })
+      .preInstructions([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }),
+      ])
       .rpc();
   }
 
@@ -403,6 +413,46 @@ export class ContractService {
         tokenAddress,
         systemProgram: web3.SystemProgram.programId,
       })
+      .preInstructions([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }),
+      ])
+      .rpc();
+  }
+
+  async toggleStrategyStatus(
+    admin: PublicKey,
+    tokenAddress: PublicKey,
+    strategyId: number
+  ) {
+    if (!this.lendingProgram) {
+      throw new Error("Lending program not initialized");
+    }
+
+    // Check if toggleStrategyStatus method exists
+    if (!this.lendingProgram.methods.toggleStrategyStatus) {
+      throw new Error("toggleStrategyStatus method not available on lending program");
+    }
+
+    const [strategyPDA] = findStrategyPDA(tokenAddress, admin, strategyId);
+
+    console.log("Toggling strategy status for:", {
+      strategyPDA: strategyPDA.toString(),
+      admin: admin.toString(),
+      tokenAddress: tokenAddress.toString(),
+      strategyId
+    });
+
+    return await this.lendingProgram.methods
+      .toggleStrategyStatus(new BN(strategyId))
+      .accounts({
+        admin,
+        strategy: strategyPDA,
+      })
+      .preInstructions([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }),
+      ])
       .rpc();
   }
 
@@ -416,6 +466,10 @@ export class ContractService {
     userUsdcAccount: PublicKey,
     vaultAccount: PublicKey
   ) {
+    if (!this.lendingProgram) {
+      throw new Error("Lending program not initialized");
+    }
+
     const [poolPDA] = findLendingPoolPDA(poolOwner);
     const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategy);
     const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
@@ -618,6 +672,36 @@ export class ContractService {
       owner,
       payer
     );
+  }
+
+  async createTokenAccount(
+    payer: PublicKey,
+    mint: PublicKey,
+    owner: PublicKey
+  ) {
+    const { instruction, address } = await this.tokenAccountManager.getOrCreateTokenAccount(
+      mint,
+      owner,
+      payer
+    );
+
+    if (instruction) {
+      const transaction = new Transaction().add(instruction);
+      
+      // Add compute budget instruction for better transaction success rate
+      const computeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({
+        units: 300_000,
+      });
+      transaction.add(computeBudgetInstruction);
+
+      if (!this.lendingProgram) {
+        throw new Error("Lending program not initialized");
+      }
+      return await this.lendingProgram.provider.sendAndConfirm(transaction);
+    }
+    
+    // Token account already exists
+    return null;
   }
 
   // Helper function to build accounts for lending operations

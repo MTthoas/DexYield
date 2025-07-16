@@ -156,6 +156,7 @@ export const useLending = () => {
   // Create strategy
   const createStrategy = useCallback(async (
     tokenAddress: PublicKey,
+    strategyId: number,
     rewardApy: number,
     name: string,
     description: string
@@ -169,6 +170,7 @@ export const useLending = () => {
       const txId = await contractService.createStrategy(
         publicKey,
         tokenAddress,
+        strategyId,
         rewardApy,
         name,
         description
@@ -320,6 +322,39 @@ export const useLending = () => {
     }
   }, [contractService, publicKey]);
 
+  // Toggle strategy status
+  const toggleStrategyStatus = useCallback(async (
+    tokenAddress: PublicKey,
+    strategyId: number
+  ) => {
+    if (!contractService || !publicKey) {
+      throw new Error('Wallet not connected or contract service not available');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const txId = await contractService.toggleStrategyStatus(
+        publicKey,
+        tokenAddress,
+        strategyId
+      );
+      console.log('Strategy status toggled:', txId);
+      
+      // Refresh strategies after toggle
+      await fetchStrategies();
+      
+      return txId;
+    } catch (err) {
+      console.error('Error toggling strategy status:', err);
+      setError(err instanceof Error ? err.message : 'Failed to toggle strategy status');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [contractService, publicKey, fetchStrategies]);
+
   return {
     loading,
     error,
@@ -337,5 +372,6 @@ export const useLending = () => {
     getPool,
     fetchStrategies,
     getUserTokenBalance,
+    toggleStrategyStatus,
   };
 };

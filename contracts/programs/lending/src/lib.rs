@@ -6,7 +6,7 @@ const MIN_DEPOSIT: u64 = 1_000_000; // 1 USDC minimum
 pub mod error;
 use error::ErrorCode;
 
-declare_id!("GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo");
+declare_id!("BHByEUQjZokRDuBacssntFnQnWEsTnxe73B3ofhRTx1J");
 
 #[program]
 pub mod lending {
@@ -58,7 +58,7 @@ pub mod lending {
                 .ok_or(ErrorCode::CalculationError)?
                 .checked_mul(time_elapsed as u64)
                 .ok_or(ErrorCode::CalculationError)?
-                / (365 * 24 * 3600 * 10000);
+                / (60 * 10000); // Calcul par minute pour POC
             
             user_deposit.yield_earned = user_deposit.yield_earned
                 .checked_add(yield_earned)
@@ -122,7 +122,7 @@ pub mod lending {
                 .ok_or(ErrorCode::CalculationError)?
                 .checked_mul(time_elapsed as u64)
                 .ok_or(ErrorCode::CalculationError)?
-                / (365 * 24 * 3600 * 10000);
+                / (60 * 10000); // Calcul par minute pour POC
             
             user_deposit.yield_earned = user_deposit.yield_earned
                 .checked_add(yield_earned)
@@ -192,7 +192,7 @@ pub mod lending {
             .ok_or(ErrorCode::CalculationError)?
             .checked_mul(time_elapsed as u64)
             .ok_or(ErrorCode::CalculationError)?
-            / (365 * 24 * 3600 * 10000);
+            / (60 * 10000); // Calcul par minute pour POC
 
         Ok(user_deposit.yield_earned.checked_add(pending_yield).ok_or(ErrorCode::CalculationError)?)
     }
@@ -234,7 +234,7 @@ pub mod lending {
         
         let user_deposit = &mut ctx.accounts.user_deposit;
         let current_time = Clock::get()?.unix_timestamp;
-        let min_duration: i64 = 60 * 60 * 24 * 7; // 7 jours
+        let min_duration: i64 = 60; // 1 minute pour POC
 
         // Vérifie que la stratégie passée correspond à celle du dépôt
         require_keys_eq!(user_deposit.strategy, ctx.accounts.strategy.key(), ErrorCode::InvalidStrategy);
@@ -256,7 +256,7 @@ pub mod lending {
                 .ok_or(ErrorCode::CalculationError)?
                 .checked_mul(time_elapsed as u64)
                 .ok_or(ErrorCode::CalculationError)?
-                / (365 * 24 * 3600 * 10000);
+                / (60 * 10000); // Calcul par minute pour POC
             
             total_yield_earned = total_yield_earned
                 .checked_add(pending_yield)
@@ -313,11 +313,11 @@ pub mod lending {
 
         // Met à jour les comptes après avoir utilisé pool.key()
         let pool = &mut ctx.accounts.pool;
-        user_deposit.amount = user_deposit.amount.checked_sub(yt_amount).ok_or(ErrorCode::CalculationError)?;
+        user_deposit.amount = user_deposit.amount.checked_sub(principal_amount).ok_or(ErrorCode::CalculationError)?;
         user_deposit.yield_earned = total_yield_earned.checked_sub(yield_amount).ok_or(ErrorCode::CalculationError)?;
         user_deposit.last_yield_calculation = current_time;
         
-        pool.total_deposits = pool.total_deposits.checked_sub(yt_amount).ok_or(ErrorCode::CalculationError)?;
+        pool.total_deposits = pool.total_deposits.checked_sub(principal_amount).ok_or(ErrorCode::CalculationError)?;
         pool.total_yield_distributed = pool.total_yield_distributed.checked_add(yield_amount).ok_or(ErrorCode::CalculationError)?;
 
         Ok(())
@@ -376,8 +376,13 @@ pub struct InitializeLendingPool<'info> {
     )]
     pub pool: Account<'info, Pool>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = vault_account.mint == token_mint.key() @ ErrorCode::InvalidVault
+    )]
     pub vault_account: Account<'info, TokenAccount>,
+
+    pub token_mint: Account<'info, Mint>,
 
     /// Mint YT (Yield Token) - PDA séparé utilisant creator.key() pour éviter la dépendance circulaire
     #[account(
@@ -423,7 +428,7 @@ pub struct InitializeUserDeposit<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -451,7 +456,7 @@ pub struct Deposit<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -502,7 +507,7 @@ pub struct Withdraw<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -550,7 +555,7 @@ pub struct GetUserBalance<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -582,7 +587,7 @@ pub struct CalculatePendingYield<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,
@@ -740,7 +745,7 @@ pub struct Redeem<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
-        seeds = [b"strategy", strategy.token_address.as_ref()],
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]
     pub strategy: Account<'info, Strategy>,

@@ -26,5 +26,7 @@ pub enum ErrorCode {
     DescriptionTooLong,
     #[msg("Non autorisé.")]
     Unauthorized,
+    #[msg("Vault invalide.")]
+    InvalidVault,
 }
 

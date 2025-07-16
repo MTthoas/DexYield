@@ -18,6 +18,9 @@ const ADMIN_ADDRESSES = [
   "7bLqvdXRBHAXGpVXYVa9La1WUjCv4TbqaEjTnU3zmETB"
 ];
 
+// Mode développement : permettre à tous les wallets d'être admin
+const DEV_MODE = true;
+
 // Tokens disponibles
 const AVAILABLE_TOKENS = [
   {
@@ -44,7 +47,7 @@ interface CreateStrategyForm {
 
 export function AdminDashboard() {
   const { connected, publicKey } = useWallet();
-  const { fetchStrategies, strategies } = useLending();
+  const { fetchStrategies, strategies, toggleStrategyStatus } = useLending();
   const { initializeStrategy } = useLendingSimplified();
   
   const [isAdmin, setIsAdmin] = useState(false);
@@ -64,7 +67,7 @@ export function AdminDashboard() {
   useEffect(() => {
     if (connected && publicKey) {
       const userAddress = publicKey.toBase58();
-      const isUserAdmin = ADMIN_ADDRESSES.includes(userAddress);
+      const isUserAdmin = DEV_MODE || ADMIN_ADDRESSES.includes(userAddress);
       setIsAdmin(isUserAdmin);
       
       if (isUserAdmin) {
@@ -160,6 +163,27 @@ export function AdminDashboard() {
       alert(errorMessage);
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  // Gérer le toggle de statut des stratégies
+  const handleToggleStrategy = async (strategy: any) => {
+    if (!publicKey) return;
+
+    setLoading(true);
+    try {
+      const tokenMint = new PublicKey(strategy.tokenAddress);
+      await toggleStrategyStatus(tokenMint, strategy.strategyId);
+      
+      alert(`Stratégie ${strategy.active ? 'désactivée' : 'activée'} avec succès!`);
+
+      // Recharger les stratégies
+      await fetchStrategies();
+    } catch (error) {
+      console.error('Erreur lors du toggle de la stratégie:', error);
+      alert('Erreur lors de la modification du statut de la stratégie');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -406,12 +430,32 @@ export function AdminDashboard() {
                           {strategy.description}
                         </p>
                       </div>
-                      <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        strategy.active 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {strategy.active ? 'Actif' : 'Inactif'}
+                      <div className="flex items-center gap-2">
+                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          strategy.active 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {strategy.active ? 'Actif' : 'Inactif'}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={strategy.active ? "destructive" : "default"}
+                          onClick={() => handleToggleStrategy(strategy)}
+                          disabled={loading}
+                          className={strategy.active 
+                            ? "bg-red-600 hover:bg-red-700 text-white" 
+                            : "bg-green-600 hover:bg-green-700 text-white"
+                          }
+                        >
+                          {loading ? (
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : strategy.active ? (
+                            "Désactiver"
+                          ) : (
+                            "Activer"
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </CardHeader>
