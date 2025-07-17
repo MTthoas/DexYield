@@ -24,7 +24,14 @@
       "Bash(ANCHOR_WALLET=~/.config/solana/id.json node scripts/test-deposit.js)",
       "Bash(ANCHOR_WALLET=~/.config/solana/id.json node scripts/interactive-deposit.js)",
       "Bash(npm run dev:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(chmod:*)",
+      "Bash(spl-token create-token:*)",
+      "Bash(spl-token create-account:*)",
+      "Bash(spl-token mint:*)",
+      "Bash(spl-token transfer:*)",
+      "mcp__ide__executeCode",
+      "Bash(npm install:*)"
     ],
     "deny": []
   }

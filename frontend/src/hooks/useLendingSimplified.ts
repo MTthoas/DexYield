@@ -3,7 +3,9 @@ import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useContracts } from './useContracts';
 import { useLending } from './useLending';
-import { USDC_MINT, DEFAULT_POOL_OWNER, TOKEN_DECIMALS, DEVNET_CONFIG, LENDING_PROGRAM_ID } from '../lib/constants';
+import { USDC_MINT, DEFAULT_POOL_OWNER, TOKEN_DECIMALS, DEVNET_CONFIG, LENDING_PROGRAM_ID, getTokenInfo } from '../lib/constants';
+import { findLendingPoolPDA, findStrategyPDA } from '../lib/contracts';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
 import { BN } from '@coral-xyz/anchor';
 
 export const useLendingSimplified = () => {
@@ -75,22 +77,12 @@ export const useLendingSimplified = () => {
       // Get associated token accounts
       const { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, NATIVE_MINT } = await import("@solana/spl-token");
       
-      // Handle SOL native token vs SPL tokens
-      const isNativeSOL = tokenMint.equals(NATIVE_MINT);
-      console.log('🔍 Is native SOL:', isNativeSOL);
-      
-      let userTokenAccount;
-      if (isNativeSOL) {
-        // For native SOL, we need to create a wrapped SOL token account
-        userTokenAccount = await getAssociatedTokenAddress(NATIVE_MINT, publicKey);
-        console.log('🔧 Using wrapped SOL token account:', userTokenAccount.toString());
-      } else {
-        userTokenAccount = await getAssociatedTokenAddress(tokenMint, publicKey);
-        console.log('🔧 Using SPL token account:', userTokenAccount.toString());
-      }
+      // All tokens are now SPL tokens
+      const userTokenAccount = await getAssociatedTokenAddress(tokenMint, publicKey);
+      console.log('🔧 Using SPL token account:', userTokenAccount.toString());
       
       const userYtAccount = await getAssociatedTokenAddress(ytMintPDA, publicKey);
-      const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolPDA, true);
+      const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolAuthorityPDA, true);
 
       const accounts = {
         poolPDA,
@@ -119,71 +111,14 @@ export const useLendingSimplified = () => {
 
       console.log('💰 Amount with decimals:', amountBN);
 
-      // Check if pool exists and initialize if needed
+      // Check if pool exists
       console.log('🔍 Checking if pool exists...');
       try {
         await contractService.getPool(poolOwner);
         console.log('✅ Pool already exists');
       } catch (poolError) {
-        console.log('❌ Pool not found, initializing...');
-        try {
-          // First, create the vault account if it doesn't exist
-          console.log('🔧 Creating vault account...');
-          const vaultAccountInfo = await contractService.tokenAccountManager.connection.getAccountInfo(accounts.vaultAccount);
-          if (!vaultAccountInfo) {
-            console.log('❌ Vault account not found, creating...');
-            const { createAssociatedTokenAccountInstruction } = await import("@solana/spl-token");
-            const { Transaction } = await import("@solana/web3.js");
-            
-            const vaultTransaction = new Transaction();
-            const createVaultInstruction = createAssociatedTokenAccountInstruction(
-              publicKey, // payer
-              accounts.vaultAccount, // ata
-              accounts.poolPDA, // owner (the pool PDA owns the vault)
-              tokenMint // mint
-            );
-            vaultTransaction.add(createVaultInstruction);
-            console.log('➕ Added create vault account instruction');
-            
-            // Get connection and wallet
-            const provider = contractService.lendingProgram?.provider;
-            if (!provider || !provider.connection || !provider.wallet) {
-              throw new Error('Provider not available');
-            }
-            
-            // Send and confirm transaction
-            console.log('📤 Sending vault account creation transaction...');
-            vaultTransaction.feePayer = publicKey;
-            vaultTransaction.recentBlockhash = (await provider.connection.getLatestBlockhash()).blockhash;
-            
-            const signedVaultTx = await provider.wallet.signTransaction(vaultTransaction);
-            const vaultTxId = await provider.connection.sendRawTransaction(signedVaultTx.serialize());
-            await provider.connection.confirmTransaction(vaultTxId);
-            
-            console.log('✅ Vault account creation transaction confirmed:', vaultTxId);
-            
-            // Wait a moment for the next transaction to get a different blockhash
-            console.log('⏳ Waiting for next blockhash...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } else {
-            console.log('✅ Vault account already exists');
-          }
-          
-          // Now initialize the pool
-          console.log('🏊 Initializing pool...');
-          const initPoolTxId = await contractService.initializeLendingPool(
-            publicKey,
-            accounts.vaultAccount
-          );
-          console.log('✅ Pool initialized:', initPoolTxId);
-          
-          // Wait for confirmation
-          console.log('⏳ Waiting for pool initialization confirmation...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (initPoolError) {
-          console.error('❌ Failed to initialize pool:', initPoolError);
-          throw new Error('Failed to initialize pool');
-        }
+        console.log('❌ Pool not found. Please create the pool first using the admin page.');
+        throw new Error('Pool not found. Please create the pool first using the admin page.');
       }
 
       // Check if strategy exists and create if needed
@@ -432,7 +367,7 @@ export const useLendingSimplified = () => {
           const createVaultInstruction = createAssociatedTokenAccountInstruction(
             publicKey, // payer
             vaultAccount, // ata
-            poolPDA, // owner (the pool PDA owns the vault)
+            poolAuthorityPDA, // owner (the pool authority PDA owns the vault)
             tokenMint // mint
           );
           vaultTransaction.add(createVaultInstruction);
@@ -505,16 +440,60 @@ export const useLendingSimplified = () => {
       throw new Error('Wallet not connected or contract service not available');
     }
 
-    // Use the provided pool owner (should be DEFAULT_POOL_OWNER for existing deposits)
-    const actualPoolOwner = poolOwner;
-
     setLoading(true);
     setError(null);
 
     try {
       console.log('🚀 Starting simplified withdraw...');
+      console.log('🔍 Strategy ID:', strategyId);
+      console.log('🔍 Token Mint:', tokenMint.toString());
+      console.log('🔍 Pool Owner (passed):', poolOwner.toString());
 
-      // Build all required accounts using our helper
+      // Find the correct pool owner by checking where the deposit exists
+      let actualPoolOwner = poolOwner;
+      let poolFound = false;
+
+      // Try multiple pool owners in order of preference
+      const potentialPoolOwners = [
+        poolOwner,           // Passed pool owner (DEFAULT_POOL_OWNER)
+        publicKey,           // User as pool owner
+      ];
+
+      console.log('🔍 Trying to find correct pool owner...');
+      
+      for (const testPoolOwner of potentialPoolOwners) {
+        try {
+          console.log(`🔍 Testing pool owner: ${testPoolOwner.toString()}`);
+          
+          // Check if pool exists
+          await contractService.getPool(testPoolOwner);
+          console.log('✅ Pool exists');
+          
+          // Check if user deposit exists for this pool/strategy combination
+          const [poolPDA] = findLendingPoolPDA(testPoolOwner);
+          const [strategyPDA] = findStrategyPDA(tokenMint, testPoolOwner, strategyId);
+          
+          try {
+            const deposit = await contractService.getUserDeposit(publicKey, poolPDA, strategyPDA);
+            if (deposit && deposit.amount > 0) {
+              console.log(`✅ Found deposit with pool owner: ${testPoolOwner.toString()}`);
+              actualPoolOwner = testPoolOwner;
+              poolFound = true;
+              break;
+            }
+          } catch (depositError) {
+            console.log(`❌ No deposit found for pool owner: ${testPoolOwner.toString()}`);
+          }
+        } catch (poolError) {
+          console.log(`❌ Pool not found for owner: ${testPoolOwner.toString()}`);
+        }
+      }
+
+      if (!poolFound) {
+        throw new Error('No valid pool with deposit found. Please make sure you have made a deposit first.');
+      }
+
+      // Build all required accounts using correct pool owner
       const accounts = await contractService.buildLendingAccounts(
         publicKey,
         actualPoolOwner,
@@ -523,21 +502,23 @@ export const useLendingSimplified = () => {
         strategyId
       );
 
-      // Check if pool exists
-      console.log('🔍 Checking if pool exists...');
-      try {
-        await contractService.getPool(actualPoolOwner);
-        console.log('✅ Pool already exists');
-      } catch (poolError) {
-        console.error('❌ Pool not found:', poolError);
-        throw new Error('Pool not found. Please make sure you have made a deposit first or that the pool has been initialized.');
-      }
+      console.log('🔍 Built accounts:');
+      console.log('  - Pool PDA:', accounts.poolPDA?.toString());
+      console.log('  - Strategy PDA:', accounts.strategyPDA?.toString());
+      console.log('  - User Deposit PDA:', accounts.userDepositPDA?.toString());
+      console.log('  - User Token Account:', accounts.userTokenAccount?.toString());
+      console.log('  - User YT Account:', accounts.userYtAccount?.toString());
+      console.log('  - Vault Account:', accounts.vaultAccount?.toString());
+      console.log('  - YT Mint PDA:', accounts.ytMintPDA?.toString());
 
       // Convert amount to proper decimals
       const decimals = tokenMint.equals(USDC_MINT) ? TOKEN_DECIMALS.USDC : TOKEN_DECIMALS.SOL;
       const amountBN = Math.floor(amount * Math.pow(10, decimals));
 
+      console.log(`🔍 Converting amount: ${amount} -> ${amountBN} (decimals: ${decimals})`);
+
       // Perform the withdrawal
+      console.log('💸 Executing withdraw transaction...');
       const txId = await contractService.withdraw(
         publicKey,
         actualPoolOwner,
@@ -554,6 +535,15 @@ export const useLendingSimplified = () => {
 
     } catch (err) {
       console.error('❌ Withdraw failed:', err);
+      
+      // Log transaction details for debugging
+      if (err?.transactionLogs) {
+        console.error('📋 Transaction logs:', err.transactionLogs);
+      }
+      if (err?.programErrorStack) {
+        console.error('📋 Program error stack:', err.programErrorStack);
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       throw err;
@@ -622,16 +612,15 @@ export const useLendingSimplified = () => {
     setError(null);
 
     try {
-      // Build accounts to get vault address
-      const accounts = await contractService.buildLendingAccounts(
-        publicKey,
-        poolOwner,
-        tokenMint
-      );
+      // Build accounts to get vault address  
+      const { findPoolAuthorityPDA } = await import("../lib/contracts");
+      const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
+      const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolAuthorityPDA, true);
 
       const txId = await contractService.initializeLendingPool(
         poolOwner,
-        accounts.vaultAccount
+        vaultAccount,
+        tokenMint
       );
 
       console.log('✅ Lending pool initialized! TX:', txId);
@@ -720,7 +709,7 @@ export const useLendingSimplified = () => {
       
       const userTokenAccount = await getAssociatedTokenAddress(tokenMint, publicKey);
       const userYtAccount = await getAssociatedTokenAddress(ytMintPDA, publicKey);
-      const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolPDA, true);
+      const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolAuthorityPDA, true);
 
       const accounts = {
         poolPDA,

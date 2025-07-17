@@ -13,19 +13,19 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-lending = "GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo"
-marketplace = "Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv"
+lending = "B7eNrb1uJR9risFgqTQhnxKQt18itfVdoz4XYufEAEX8"
+marketplace = "9B1oveu4aVQjxboVRa4FYB9iqtbBoQhHy9FNrKNzSM8c"
 
 [programs.devnet]
-lending = "GBhdq8ypCAdTEqPLm4ZQA4mSUjHik7U43FMoou3qwLxo"
-marketplace = "Gju2aAZ2WnbEnEgGZK5fzxj2fevfwexYL5d411ZyY7tv"
+lending = "B7eNrb1uJR9risFgqTQhnxKQt18itfVdoz4XYufEAEX8"
+marketplace = "9B1oveu4aVQjxboVRa4FYB9iqtbBoQhHy9FNrKNzSM8c"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"
-wallet = "~/.config/solana/id.json"
+wallet = "~/.config/solana/new-id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

@@ -152,8 +152,25 @@ export const findStrategyPDA = (
       ? tokenAddress
       : new PublicKey(tokenAddress);
   const adminKey = admin instanceof PublicKey ? admin : new PublicKey(admin);
-  const strategyIdBuffer = Buffer.allocUnsafe(8);
+  
+  // Create 8-byte buffer in little-endian format, matching Rust's u64::to_le_bytes()
+  const strategyIdBuffer = Buffer.alloc(8);
   strategyIdBuffer.writeBigUInt64LE(BigInt(strategyId), 0);
+
+  // Test with old pattern to see if it matches what the contract expects
+  const [oldPatternPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("strategy"), tokenKey.toBuffer()],
+    LENDING_PROGRAM_ID
+  );
+
+  console.log("findStrategyPDA debug:", {
+    tokenAddress: tokenKey.toString(),
+    admin: adminKey.toString(),
+    strategyId,
+    strategyIdBuffer: Array.from(strategyIdBuffer),
+    strategyIdHex: strategyIdBuffer.toString('hex'),
+    oldPatternPDA: oldPatternPDA.toString(),
+  });
 
   return PublicKey.findProgramAddressSync(
     [
@@ -236,7 +253,7 @@ export class ContractService {
   }
 
   // Lending functions
-  async initializeLendingPool(creator: PublicKey, vaultAccount: PublicKey) {
+  async initializeLendingPool(creator: PublicKey, vaultAccount: PublicKey, tokenMint: PublicKey) {
     if (!this.lendingProgram) {
       throw new Error("Lending program not initialized");
     }
@@ -251,7 +268,14 @@ export class ContractService {
       vaultAccount: vaultAccount.toString(),
       ytMint: ytMintPDA.toString(),
       poolAuthority: poolAuthorityPDA.toString(),
+      tokenMint: tokenMint.toString(),
     });
+
+    // Validate token mint exists
+    const mintInfo = await this.lendingProgram.provider.connection.getAccountInfo(tokenMint);
+    if (!mintInfo) {
+      throw new Error(`Token mint ${tokenMint.toString()} does not exist`);
+    }
 
     return await this.lendingProgram.methods
       .initializeLendingPool()
@@ -259,6 +283,7 @@ export class ContractService {
         creator,
         pool: poolPDA,
         vaultAccount,
+        tokenMint,
         ytMint: ytMintPDA,
         poolAuthority: poolAuthorityPDA,
         tokenProgram: TOKEN_PROGRAM_ID,
@@ -413,6 +438,12 @@ export class ContractService {
     }
 
     console.log("Creating strategy with multiple strategies per token support");
+    console.log("Strategy PDA debug:", {
+      tokenAddress: tokenAddress.toString(),
+      admin: admin.toString(),
+      strategyId,
+      strategyPDA: strategyPDA.toString(),
+    });
 
     return await this.lendingProgram.methods
       .createStrategy(new BN(strategyId), new BN(rewardApy), name, description)
@@ -732,7 +763,7 @@ export class ContractService {
     const userYtAccount = await getAssociatedTokenAddress(ytMintPDA, user);
     const vaultAccount = await getAssociatedTokenAddress(
       tokenMint,
-      poolPDA,
+      poolAuthorityPDA,
       true
     );
 

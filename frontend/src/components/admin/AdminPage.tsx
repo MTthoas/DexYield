@@ -1,0 +1,1 @@
+export { AdminDashboard as AdminPage } from './AdminDashboard';
