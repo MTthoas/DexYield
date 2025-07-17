@@ -141,11 +141,11 @@ const createPoolsFromStrategies = (
       totalDeposits: tvlInTokens, // Toujours dynamique
       userDeposit: userDeposit
         ? getBNNumber(userDeposit.amount) /
-          Math.pow(10, tokenConfig?.decimals || 6)
+          Math.pow(10, tokenConfig?.decimals || TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6)
         : undefined,
       userYieldEarned: userDeposit
         ? getBNNumber(userDeposit.yieldEarned) /
-          Math.pow(10, tokenConfig?.decimals || 6)
+          Math.pow(10, tokenConfig?.decimals || TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6)
         : undefined,
       userDepositTime: userDeposit ? userDeposit.depositTime : undefined,
       isActive: strategy.active,
@@ -180,6 +180,7 @@ export default function LendingPage() {
     initializeStrategy,
     initializeLendingPool,
     checkRedeemAvailability,
+    resetUserYield,
   } = useLendingSimplified();
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -196,6 +197,7 @@ export default function LendingPage() {
   });
   const [devMode, setDevMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+
 
   // Refs for component lifecycle management
   const mountedRef = useRef(true);
@@ -257,13 +259,13 @@ export default function LendingPage() {
                   // Utiliser le PublicKey de la stratégie directement (pas besoin de new PublicKey)
                   const strategyPubkey = new PublicKey(strategy.id);
                   const depositRaw = await getUserDeposit(
-                    publicKey,
+                    publicKey, // Corrigé : utiliser le wallet connecté
                     strategyPubkey
                   );
                   console.log(`🔍 depositRaw for ${strategy.id}:`, depositRaw, {
                     strategyId: strategy.id,
                     strategyPubkey: strategyPubkey.toBase58(),
-                    owner: DEFAULT_POOL_OWNER,
+                    owner: publicKey.toString(),
                     tokenSymbol: strategy.tokenSymbol,
                     tokenAddress: strategy.tokenAddress,
                     publicKey: publicKey?.toBase58?.() || publicKey,
@@ -609,7 +611,8 @@ export default function LendingPage() {
         if (!strategy) throw new Error("Strategy not found");
 
         const tokenMint = new PublicKey(strategy.tokenAddress);
-        await withdraw(tokenMint, amount);
+        // Use DEFAULT_POOL_OWNER as all deposits are in the shared pool
+        await withdraw(tokenMint, amount, strategy.strategyId, DEFAULT_POOL_OWNER);
         toast.success(
           `Successfully withdrew ${amount} ${strategy.tokenSymbol}`
         );

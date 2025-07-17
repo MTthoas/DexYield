@@ -245,6 +245,14 @@ export class ContractService {
     const [ytMintPDA] = findYtMintPDA(creator);
     const [poolAuthorityPDA] = findPoolAuthorityPDA(creator);
 
+    console.log('🏊 Initializing lending pool with accounts:', {
+      creator: creator.toString(),
+      pool: poolPDA.toString(),
+      vaultAccount: vaultAccount.toString(),
+      ytMint: ytMintPDA.toString(),
+      poolAuthority: poolAuthorityPDA.toString(),
+    });
+
     return await this.lendingProgram.methods
       .initializeLendingPool()
       .accounts({
@@ -260,6 +268,7 @@ export class ContractService {
         ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
         ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }),
       ])
+      .signers([])
       .rpc();
   }
 
@@ -737,5 +746,49 @@ export class ContractService {
       userYtAccount,
       vaultAccount,
     };
+  }
+
+  // Reset user yield data (migration function)
+  async resetUserYield(
+    user: PublicKey,
+    poolOwner: PublicKey,
+    strategy: PublicKey
+  ) {
+    if (!this.lendingProgram) {
+      throw new Error("Lending program not initialized");
+    }
+
+    const [poolPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("lending_pool"), poolOwner.toBuffer()],
+      this.lendingProgram.programId
+    );
+    
+    const [userDepositPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("user_deposit"),
+        user.toBuffer(),
+        poolPDA.toBuffer(),
+        strategy.toBuffer(),
+      ],
+      this.lendingProgram.programId
+    );
+
+    const accounts = {
+      user,
+      userDeposit: userDepositPDA,
+      pool: poolPDA,
+      strategy,
+    };
+
+    console.log("🔄 Resetting user yield data...");
+    console.log("Accounts:", accounts);
+
+    const txId = await (this.lendingProgram as any).methods
+      .resetUserYield()
+      .accounts(accounts)
+      .rpc();
+
+    console.log("✅ User yield reset successful! TX:", txId);
+    return txId;
   }
 }

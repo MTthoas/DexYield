@@ -58,7 +58,7 @@ pub mod lending {
                 .ok_or(ErrorCode::CalculationError)?
                 .checked_mul(time_elapsed as u64)
                 .ok_or(ErrorCode::CalculationError)?
-                / (60 * 10000); // Calcul par minute pour POC
+                / (31536000 * 10000); // 31536000 = secondes dans une année
             
             user_deposit.yield_earned = user_deposit.yield_earned
                 .checked_add(yield_earned)
@@ -122,7 +122,7 @@ pub mod lending {
                 .ok_or(ErrorCode::CalculationError)?
                 .checked_mul(time_elapsed as u64)
                 .ok_or(ErrorCode::CalculationError)?
-                / (60 * 10000); // Calcul par minute pour POC
+                / (31536000 * 10000); // 31536000 = secondes dans une année
             
             user_deposit.yield_earned = user_deposit.yield_earned
                 .checked_add(yield_earned)
@@ -192,7 +192,7 @@ pub mod lending {
             .ok_or(ErrorCode::CalculationError)?
             .checked_mul(time_elapsed as u64)
             .ok_or(ErrorCode::CalculationError)?
-            / (60 * 10000); // Calcul par minute pour POC
+            / (31536000 * 10000); // 31536000 = secondes dans une année
 
         Ok(user_deposit.yield_earned.checked_add(pending_yield).ok_or(ErrorCode::CalculationError)?)
     }
@@ -256,7 +256,7 @@ pub mod lending {
                 .ok_or(ErrorCode::CalculationError)?
                 .checked_mul(time_elapsed as u64)
                 .ok_or(ErrorCode::CalculationError)?
-                / (60 * 10000); // Calcul par minute pour POC
+                / (31536000 * 10000); // 31536000 = secondes dans une année
             
             total_yield_earned = total_yield_earned
                 .checked_add(pending_yield)
@@ -357,6 +357,21 @@ pub mod lending {
     pub fn toggle_pool_status(ctx: Context<TogglePoolStatus>) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
         pool.active = !pool.active;
+        Ok(())
+    }
+
+    /// Fonction de migration pour réinitialiser le yield accumulé d'un utilisateur
+    /// à utiliser après la correction du bug de calcul
+    pub fn reset_user_yield(ctx: Context<ResetUserYield>) -> Result<()> {
+        let user_deposit = &mut ctx.accounts.user_deposit;
+        let current_time = Clock::get()?.unix_timestamp;
+        
+        // Réinitialiser le yield accumulé à 0
+        user_deposit.yield_earned = 0;
+        // Réinitialiser le timestamp de dernière calculation
+        user_deposit.last_yield_calculation = current_time;
+        
+        msg!("Reset yield for user: {}", ctx.accounts.user.key());
         Ok(())
     }
 }
@@ -774,4 +789,29 @@ pub struct Redeem<'info> {
     pub pool_authority: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct ResetUserYield<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"user_deposit", user.key().as_ref(), pool.key().as_ref(), strategy.key().as_ref()],
+        bump
+    )]
+    pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"lending_pool", pool.owner.as_ref()],
+        bump
+    )]
+    pub pool: Account<'info, Pool>,
+
+    #[account(
+        seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub strategy: Account<'info, Strategy>,
 }

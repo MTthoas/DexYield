@@ -498,11 +498,15 @@ export const useLendingSimplified = () => {
   const withdraw = useCallback(async (
     tokenMint: PublicKey,
     amount: number,
-    poolOwner: PublicKey = DEFAULT_POOL_OWNER
+    strategyId: number,
+    poolOwner: PublicKey = DEFAULT_POOL_OWNER // Use DEFAULT_POOL_OWNER by default
   ) => {
     if (!contractService || !publicKey) {
       throw new Error('Wallet not connected or contract service not available');
     }
+
+    // Use the provided pool owner (should be DEFAULT_POOL_OWNER for existing deposits)
+    const actualPoolOwner = poolOwner;
 
     setLoading(true);
     setError(null);
@@ -513,9 +517,21 @@ export const useLendingSimplified = () => {
       // Build all required accounts using our helper
       const accounts = await contractService.buildLendingAccounts(
         publicKey,
-        poolOwner,
-        tokenMint
+        actualPoolOwner,
+        tokenMint,
+        publicKey,
+        strategyId
       );
+
+      // Check if pool exists
+      console.log('🔍 Checking if pool exists...');
+      try {
+        await contractService.getPool(actualPoolOwner);
+        console.log('✅ Pool already exists');
+      } catch (poolError) {
+        console.error('❌ Pool not found:', poolError);
+        throw new Error('Pool not found. Please make sure you have made a deposit first or that the pool has been initialized.');
+      }
 
       // Convert amount to proper decimals
       const decimals = tokenMint.equals(USDC_MINT) ? TOKEN_DECIMALS.USDC : TOKEN_DECIMALS.SOL;
@@ -524,7 +540,7 @@ export const useLendingSimplified = () => {
       // Perform the withdrawal
       const txId = await contractService.withdraw(
         publicKey,
-        poolOwner,
+        actualPoolOwner,
         accounts.strategyPDA,
         amountBN,
         accounts.userTokenAccount,
@@ -636,12 +652,13 @@ export const useLendingSimplified = () => {
     ytAmount: number,
     strategyId: number,
     strategyAddress: string,
-    poolOwner: PublicKey = DEFAULT_POOL_OWNER
+    poolOwner?: PublicKey // Use connected wallet as pool owner
   ) => {
     if (!contractService || !publicKey) {
       throw new Error('Wallet not connected or contract service not available');
     }
 
+    const actualPoolOwner = poolOwner || publicKey;
     setLoading(true);
     setError(null);
 
@@ -651,7 +668,7 @@ export const useLendingSimplified = () => {
       console.log('YT Amount:', ytAmount);
       console.log('Strategy ID:', strategyId);
       console.log('Strategy Address:', strategyAddress);
-      console.log('Pool owner:', poolOwner.toString());
+      console.log('Pool owner:', actualPoolOwner.toString());
 
       // Validate input parameters
       if (!tokenMint || !strategyAddress) {
@@ -674,7 +691,7 @@ export const useLendingSimplified = () => {
       const { LENDING_PROGRAM_ID } = await import("../lib/constants");
       
       const [poolPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("lending_pool"), poolOwner.toBuffer()],
+        [Buffer.from("lending_pool"), actualPoolOwner.toBuffer()],
         LENDING_PROGRAM_ID
       );
       
@@ -689,12 +706,12 @@ export const useLendingSimplified = () => {
       );
       
       const [poolAuthorityPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("authority"), poolOwner.toBuffer()],
+        [Buffer.from("authority"), actualPoolOwner.toBuffer()],
         LENDING_PROGRAM_ID
       );
       
       const [ytMintPDA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("yt_mint"), poolOwner.toBuffer()],
+        [Buffer.from("yt_mint"), actualPoolOwner.toBuffer()],
         LENDING_PROGRAM_ID
       );
 
@@ -726,6 +743,16 @@ export const useLendingSimplified = () => {
         vaultAccount: accounts.vaultAccount.toString(),
       });
 
+      // Check if pool exists before attempting redeem
+      console.log('🔍 Checking if pool exists...');
+      try {
+        await contractService.getPool(actualPoolOwner);
+        console.log('✅ Pool exists');
+      } catch (poolError) {
+        console.error('❌ Pool not found:', poolError);
+        throw new Error('Pool not initialized. Please make a deposit first to initialize the pool.');
+      }
+
       // Convertir les Ytoken en décimales
       const decimals = tokenMint.equals(USDC_MINT) ? TOKEN_DECIMALS.USDC : TOKEN_DECIMALS.SOL;
       const ytAmountBN = Math.floor(ytAmount * Math.pow(10, decimals));
@@ -741,7 +768,7 @@ export const useLendingSimplified = () => {
       console.log('💸 Executing redeem transaction...');
       const txId = await contractService.redeem(
         publicKey,
-        poolOwner,
+        actualPoolOwner,
         accounts.strategyPDA,
         ytAmountBN,
         accounts.ytMintPDA,
@@ -805,6 +832,40 @@ export const useLendingSimplified = () => {
     };
   }, []);
 
+  // Reset user yield data (migration function)
+  const resetUserYield = useCallback(async (
+    poolOwner: PublicKey,
+    strategy: PublicKey
+  ) => {
+    if (!contractService || !publicKey) {
+      throw new Error('Wallet not connected or contract service not available');
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔄 Starting user yield reset...');
+      
+      const txId = await contractService.resetUserYield(
+        publicKey,
+        poolOwner,
+        strategy
+      );
+
+      console.log('✅ User yield reset successful! TX:', txId);
+      return txId;
+
+    } catch (err) {
+      console.error('❌ User yield reset failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [contractService, publicKey]);
+
   return {
     loading,
     error,
@@ -814,5 +875,6 @@ export const useLendingSimplified = () => {
     initializeStrategy,
     initializeLendingPool,
     checkRedeemAvailability,
+    resetUserYield,
   };
 };
