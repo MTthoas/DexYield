@@ -1,5 +1,5 @@
 {
-  "address": "BHByEUQjZokRDuBacssntFnQnWEsTnxe73B3ofhRTx1J",
+  "address": "B7eNrb1uJR9risFgqTQhnxKQt18itfVdoz4XYufEAEX8",
   "metadata": {
     "name": "lending",
     "version": "0.1.0",
@@ -23,35 +23,6 @@
         {
           "name": "user",
           "signer": true
-        },
-        {
-          "name": "pool",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
         },
         {
           "name": "user_deposit",
@@ -80,10 +51,6 @@
               },
               {
                 "kind": "account",
-                "path": "pool"
-              },
-              {
-                "kind": "account",
                 "path": "strategy"
               }
             ]
@@ -109,6 +76,16 @@
               {
                 "kind": "account",
                 "path": "strategy.token_address",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
                 "account": "Strategy"
               }
             ]
@@ -155,7 +132,7 @@
                 ]
               },
               {
-                "kind": "account",
+                "kind": "arg",
                 "path": "token_address"
               },
               {
@@ -170,11 +147,21 @@
           }
         },
         {
-          "name": "token_address"
+          "name": "token_yield_address",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
@@ -183,16 +170,12 @@
           "type": "u64"
         },
         {
+          "name": "token_address",
+          "type": "pubkey"
+        },
+        {
           "name": "reward_apy",
           "type": "u64"
-        },
-        {
-          "name": "name",
-          "type": "string"
-        },
-        {
-          "name": "description",
-          "type": "string"
         }
       ]
     },
@@ -215,36 +198,6 @@
           "signer": true
         },
         {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
           "name": "user_deposit",
           "writable": true,
           "pda": {
@@ -269,10 +222,6 @@
               {
                 "kind": "account",
                 "path": "user"
-              },
-              {
-                "kind": "account",
-                "path": "pool"
               },
               {
                 "kind": "account",
@@ -302,6 +251,16 @@
                 "kind": "account",
                 "path": "strategy.token_address",
                 "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
@@ -315,63 +274,54 @@
           "writable": true
         },
         {
-          "name": "vault_account",
-          "writable": true
+          "name": "token_mint"
         },
         {
-          "name": "yt_mint",
+          "name": "vault_account",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  121,
+                  118,
+                  97,
+                  117,
+                  108,
                   116,
                   95,
-                  109,
-                  105,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
                   110,
                   116
                 ]
               },
               {
                 "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
+                "path": "token_mint"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
         },
         {
-          "name": "pool_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
+          "name": "yt_mint",
+          "writable": true
         },
         {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -380,52 +330,6 @@
           "type": "u64"
         }
       ]
-    },
-    {
-      "name": "get_total_deposits",
-      "discriminator": [
-        148,
-        214,
-        163,
-        119,
-        182,
-        113,
-        247,
-        168
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        }
-      ],
-      "args": [],
-      "returns": "u64"
     },
     {
       "name": "get_user_balance",
@@ -445,35 +349,6 @@
           "signer": true
         },
         {
-          "name": "pool",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
           "name": "user_deposit",
           "pda": {
             "seeds": [
@@ -497,10 +372,6 @@
               {
                 "kind": "account",
                 "path": "user"
-              },
-              {
-                "kind": "account",
-                "path": "pool"
               },
               {
                 "kind": "account",
@@ -530,6 +401,16 @@
                 "kind": "account",
                 "path": "strategy.token_address",
                 "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
@@ -537,120 +418,6 @@
       ],
       "args": [],
       "returns": "u64"
-    },
-    {
-      "name": "initialize_lending_pool",
-      "discriminator": [
-        236,
-        76,
-        136,
-        68,
-        196,
-        14,
-        9,
-        177
-      ],
-      "accounts": [
-        {
-          "name": "creator",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "creator"
-              }
-            ]
-          }
-        },
-        {
-          "name": "vault_account",
-          "writable": true
-        },
-        {
-          "name": "yt_mint",
-          "docs": [
-            "Mint YT (Yield Token) - PDA séparé utilisant creator.key() pour éviter la dépendance circulaire"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  121,
-                  116,
-                  95,
-                  109,
-                  105,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "creator"
-              }
-            ]
-          }
-        },
-        {
-          "name": "pool_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "creator"
-              }
-            ]
-          }
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
     },
     {
       "name": "initialize_user_deposit",
@@ -671,35 +438,6 @@
           "signer": true
         },
         {
-          "name": "pool",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
           "name": "user_deposit",
           "writable": true,
           "pda": {
@@ -724,10 +462,6 @@
               {
                 "kind": "account",
                 "path": "user"
-              },
-              {
-                "kind": "account",
-                "path": "pool"
               },
               {
                 "kind": "account",
@@ -757,6 +491,16 @@
                 "kind": "account",
                 "path": "strategy.token_address",
                 "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
@@ -767,124 +511,6 @@
         }
       ],
       "args": []
-    },
-    {
-      "name": "mint_yield_token",
-      "docs": [
-        "Mint des Yield Tokens (YT) à l'utilisateur à partir du dépôt."
-      ],
-      "discriminator": [
-        204,
-        37,
-        187,
-        73,
-        213,
-        203,
-        70,
-        128
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
-          "name": "yt_mint",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  121,
-                  116,
-                  95,
-                  109,
-                  105,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
-          "name": "mint_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
-          "name": "user_token_account",
-          "writable": true
-        },
-        {
-          "name": "user",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
     },
     {
       "name": "redeem",
@@ -905,36 +531,6 @@
           "signer": true
         },
         {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
           "name": "user_deposit",
           "writable": true,
           "pda": {
@@ -959,10 +555,6 @@
               {
                 "kind": "account",
                 "path": "user"
-              },
-              {
-                "kind": "account",
-                "path": "pool"
               },
               {
                 "kind": "account",
@@ -992,34 +584,23 @@
                 "kind": "account",
                 "path": "strategy.token_address",
                 "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
         },
         {
           "name": "yt_mint",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  121,
-                  116,
-                  95,
-                  109,
-                  105,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "user_token_account",
@@ -1031,30 +612,36 @@
         },
         {
           "name": "vault_account",
-          "writable": true
-        },
-        {
-          "name": "pool_authority",
+          "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
+                  118,
                   97,
                   117,
+                  108,
                   116,
-                  104,
+                  95,
+                  97,
+                  99,
+                  99,
                   111,
-                  114,
-                  105,
-                  116,
-                  121
+                  117,
+                  110,
+                  116
                 ]
               },
               {
                 "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
+                "path": "strategy.token_address",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
@@ -1072,48 +659,87 @@
       ]
     },
     {
-      "name": "toggle_pool_status",
+      "name": "reset_user_yield",
       "discriminator": [
-        30,
-        149,
-        103,
-        35,
-        220,
-        41,
-        255,
-        24
+        74,
+        26,
+        50,
+        244,
+        201,
+        21,
+        210,
+        204
       ],
       "accounts": [
         {
-          "name": "admin",
+          "name": "user",
           "writable": true,
           "signer": true
         },
         {
-          "name": "pool",
+          "name": "user_deposit",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  108,
+                  117,
+                  115,
                   101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
+                  114,
                   95,
+                  100,
+                  101,
                   112,
                   111,
-                  111,
-                  108
+                  115,
+                  105,
+                  116
                 ]
               },
               {
                 "kind": "account",
-                "path": "admin"
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "strategy"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strategy",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "strategy.token_address",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
@@ -1200,36 +826,6 @@
           "signer": true
         },
         {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  110,
-                  100,
-                  105,
-                  110,
-                  103,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
-        },
-        {
           "name": "user_deposit",
           "writable": true,
           "pda": {
@@ -1254,10 +850,6 @@
               {
                 "kind": "account",
                 "path": "user"
-              },
-              {
-                "kind": "account",
-                "path": "pool"
               },
               {
                 "kind": "account",
@@ -1287,6 +879,16 @@
                 "kind": "account",
                 "path": "strategy.token_address",
                 "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.admin",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
@@ -1301,58 +903,43 @@
         },
         {
           "name": "vault_account",
-          "writable": true
-        },
-        {
-          "name": "yt_mint",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  121,
+                  118,
+                  97,
+                  117,
+                  108,
                   116,
                   95,
-                  109,
-                  105,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
                   110,
                   116
                 ]
               },
               {
                 "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
+                "path": "strategy.token_address",
+                "account": "Strategy"
+              },
+              {
+                "kind": "account",
+                "path": "strategy.strategy_id",
+                "account": "Strategy"
               }
             ]
           }
         },
         {
-          "name": "pool_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool.owner",
-                "account": "Pool"
-              }
-            ]
-          }
+          "name": "yt_mint",
+          "writable": true
         },
         {
           "name": "token_program",
@@ -1368,19 +955,6 @@
     }
   ],
   "accounts": [
-    {
-      "name": "Pool",
-      "discriminator": [
-        241,
-        154,
-        109,
-        4,
-        17,
-        177,
-        109,
-        188
-      ]
-    },
     {
       "name": "Strategy",
       "discriminator": [
@@ -1411,102 +985,76 @@
   "errors": [
     {
       "code": 6000,
-      "name": "TooEarlyToRedeem",
-      "msg": "Trop tôt pour récupérer le yield."
+      "name": "CalculationError",
+      "msg": "Calcul impossible, débordement détecté"
     },
     {
       "code": 6001,
       "name": "InsufficientFunds",
-      "msg": "Fonds insuffisants dans le dépôt de l'utilisateur."
+      "msg": "Fonds insuffisants pour cette opération"
     },
     {
       "code": 6002,
-      "name": "CalculationError",
-      "msg": "Erreur de calcul."
+      "name": "InvalidAPY",
+      "msg": "Taux APY invalide"
     },
     {
       "code": 6003,
-      "name": "InvalidAPY",
-      "msg": "APY invalide."
+      "name": "InvalidAmount",
+      "msg": "Montant invalide"
     },
     {
       "code": 6004,
-      "name": "InvalidStrategy",
-      "msg": "Stratégie du dépôt invalide."
+      "name": "Unauthorized",
+      "msg": "Autorisation refusée"
     },
     {
       "code": 6005,
       "name": "InsufficientDepositAmount",
-      "msg": "Montant de dépôt insuffisant."
+      "msg": "Montant de dépôt insuffisant"
     },
     {
       "code": 6006,
       "name": "PoolInactive",
-      "msg": "Pool inactif."
+      "msg": "Pool inactive"
     },
     {
       "code": 6007,
-      "name": "InvalidAmount",
-      "msg": "Montant invalide."
+      "name": "InvalidStrategy",
+      "msg": "Stratégie invalide"
     },
     {
       "code": 6008,
-      "name": "InsufficientYieldTokens",
-      "msg": "Tokens de yield insuffisants."
+      "name": "InvalidVault",
+      "msg": "Vault invalide"
     },
     {
       "code": 6009,
-      "name": "NameTooLong",
-      "msg": "Nom trop long."
+      "name": "InsufficientYieldTokens",
+      "msg": "Tokens de yield insuffisants"
     },
     {
       "code": 6010,
-      "name": "DescriptionTooLong",
-      "msg": "Description trop longue."
+      "name": "TooEarlyToRedeem",
+      "msg": "Trop tôt pour échanger"
     },
     {
       "code": 6011,
-      "name": "Unauthorized",
-      "msg": "Non autorisé."
+      "name": "PoolAlreadyInitialized",
+      "msg": "Pool déjà initialisé"
+    },
+    {
+      "code": 6012,
+      "name": "UserDepositAlreadyInitialized",
+      "msg": "Compte utilisateur déjà initialisé"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidYieldToken",
+      "msg": "Token yield invalide"
     }
   ],
   "types": [
-    {
-      "name": "Pool",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "owner",
-            "type": "pubkey"
-          },
-          {
-            "name": "total_deposits",
-            "type": "u64"
-          },
-          {
-            "name": "total_yield_distributed",
-            "type": "u64"
-          },
-          {
-            "name": "vault_account",
-            "type": "pubkey"
-          },
-          {
-            "name": "yt_mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "created_at",
-            "type": "i64"
-          },
-          {
-            "name": "active",
-            "type": "bool"
-          }
-        ]
-      }
-    },
     {
       "name": "Strategy",
       "type": {
@@ -1525,16 +1073,12 @@
             "type": "pubkey"
           },
           {
+            "name": "token_yield_address",
+            "type": "pubkey"
+          },
+          {
             "name": "reward_apy",
             "type": "u64"
-          },
-          {
-            "name": "name",
-            "type": "string"
-          },
-          {
-            "name": "description",
-            "type": "string"
           },
           {
             "name": "created_at",
@@ -1558,10 +1102,6 @@
         "fields": [
           {
             "name": "user",
-            "type": "pubkey"
-          },
-          {
-            "name": "pool",
             "type": "pubkey"
           },
           {
