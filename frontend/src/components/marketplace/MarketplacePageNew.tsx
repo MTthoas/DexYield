@@ -1,14 +1,13 @@
 import { useState, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey, Transaction } from "@solana/web3.js";
-import { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { 
   ShoppingCart, 
   DollarSign, 
@@ -17,12 +16,11 @@ import {
   User,
   Plus,
   Minus,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from "lucide-react";
 import { useMarketplace } from "@/hooks/useMarketplace";
-import { useContracts } from "@/hooks/useContracts";
-import { WalletInfo } from "@/components/WalletInfo";
-import { MARKETPLACE_PROGRAM_ID } from "@/lib/constants";
+import { useLending } from "@/hooks/useLending";
 
 // Interface pour les listings du marketplace
 interface YTListing {
@@ -40,9 +38,9 @@ interface YTListing {
 
 // Interface pour le formulaire de création de listing
 interface CreateListingForm {
-  selectedYtToken: string;
   ytAmount: string;
   pricePerToken: string;
+  selectedStrategy: string;
 }
 
 // Interface pour le formulaire d'achat
@@ -51,18 +49,16 @@ interface BuyForm {
 }
 
 export function MarketplacePage() {
-  const { connected, publicKey, sendTransaction } = useWallet();
-  const { connection } = useConnection();
+  const { connected, publicKey } = useWallet();
   const { 
     listings, 
-    userYieldTokens,
     fetchListings, 
-    fetchUserYieldTokens,
     listYT, 
     buyYT, 
-    cancelListing 
+    cancelListing,
+    loading: marketplaceLoading 
   } = useMarketplace();
-  const contractService = useContracts();
+  const { strategies, fetchStrategies } = useLending();
 
   // États pour l'interface
   const [activeTab, setActiveTab] = useState<'buy' | 'sell' | 'my-listings'>('buy');
@@ -73,9 +69,9 @@ export function MarketplacePage() {
   
   // États pour les formulaires
   const [createForm, setCreateForm] = useState<CreateListingForm>({
-    selectedYtToken: '',
     ytAmount: '',
-    pricePerToken: ''
+    pricePerToken: '',
+    selectedStrategy: ''
   });
   const [buyForm, setBuyForm] = useState<BuyForm>({
     amount: ''
@@ -86,29 +82,24 @@ export function MarketplacePage() {
   const [buyLoading, setBuyLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState<string | null>(null);
 
-  // Simplifier les listings (pour le moment sans enrichissement)
-  const processedListings = listings.map(listing => ({
-    ...listing,
-    tokenSymbol: 'YT',
-    pricePerToken: listing.amount > 0 ? listing.price / listing.amount : 0
-  }));
-
-  // Filtrer les listings
-  const myListings = processedListings.filter(listing => 
-    publicKey && listing.seller === publicKey.toBase58()
-  );
-
-  const activeListings = processedListings.filter(listing => 
-    listing.active && (!publicKey || listing.seller !== publicKey.toBase58())
-  );
+  // Transformer les listings avec les données des stratégies
+  const enrichedListings: YTListing[] = listings.map(listing => {
+    const strategy = strategies.find(s => s.tokenAddress === listing.ytMint);
+    return {
+      ...listing,
+      tokenSymbol: strategy?.tokenSymbol || 'YT',
+      strategyApy: strategy?.rewardApy ? strategy.rewardApy / 10000 : undefined,
+      pricePerToken: listing.amount > 0 ? listing.price / listing.amount : 0
+    };
+  });
 
   // Charger les données au montage
   useEffect(() => {
     if (connected) {
       fetchListings();
-      fetchUserYieldTokens();
+      fetchStrategies();
     }
-  }, [connected, fetchListings, fetchUserYieldTokens]);
+  }, [connected, fetchListings, fetchStrategies]);
 
   // Rafraîchissement automatique toutes les 30 secondes
   useEffect(() => {
@@ -125,7 +116,7 @@ export function MarketplacePage() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([fetchListings(), fetchUserYieldTokens()]);
+      await Promise.all([fetchListings(), fetchStrategies()]);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -135,102 +126,40 @@ export function MarketplacePage() {
 
   // Créer un listing
   const handleCreateListing = async () => {
-    if (!publicKey || !createForm.ytAmount || !createForm.pricePerToken || !createForm.selectedYtToken) {
+    if (!publicKey || !createForm.ytAmount || !createForm.pricePerToken || !createForm.selectedStrategy) {
       alert('Veuillez remplir tous les champs');
       return;
     }
 
     setCreateLoading(true);
     try {
-      const selectedYtToken = userYieldTokens.find(yt => yt.mint === createForm.selectedYtToken);
-      if (!selectedYtToken) {
-        alert('YT Token non trouvé');
+      const strategy = strategies.find(s => s.id === createForm.selectedStrategy);
+      if (!strategy) {
+        alert('Stratégie non trouvée');
         return;
       }
 
       const ytAmount = parseFloat(createForm.ytAmount);
       const pricePerToken = parseFloat(createForm.pricePerToken);
       
-      if (ytAmount > selectedYtToken.amount) {
-        alert(`Quantité insuffisante. Vous avez ${selectedYtToken.amount} ${selectedYtToken.symbol}`);
-        return;
-      }
-      
       // Convertir en micro-unités pour le contrat
       const amountMicroUnits = Math.floor(ytAmount * 1000000);
       const priceMicroUnits = Math.floor(pricePerToken * ytAmount * 1000000);
 
-      // Utiliser le compte token de l'utilisateur
-      const ytTokenAccount = selectedYtToken.tokenAccount;
-      if (!ytTokenAccount) {
-        alert('Compte token non trouvé');
-        return;
-      }
-
-      // Créer un compte escrow token pour le YT mint
-      const ytMint = new PublicKey(selectedYtToken.mint);
-      
-      // Dériver l'autorité escrow selon l'IDL (seeds: ["escrow", seller])
-      const [escrowAuthority] = PublicKey.findProgramAddressSync(
-        [Buffer.from("escrow"), publicKey.toBuffer()],
-        MARKETPLACE_PROGRAM_ID
-      );
-
-      // Le compte escrow doit être un Associated Token Account pour le YT mint
-      // appartenant à l'autorité escrow
-      if (!contractService) {
-        alert('Service contractuel non initialisé');
-        return;
-      }
-
-      const escrowTokenAddress = await getAssociatedTokenAddress(
-        ytMint,
-        escrowAuthority,
-        true // allowOwnerOffCurve pour PDA
-      );
-
-      // Vérifier si le compte escrow existe, et le créer si nécessaire
-      try {
-        await getAccount(connection, escrowTokenAddress);
-        console.log("✅ Compte escrow existe déjà");
-      } catch (error) {
-        console.log("🔧 Création du compte escrow nécessaire");
-        
-        try {
-          // Créer le compte escrow manuellement
-          const transaction = new Transaction();
-          
-          // Ajouter l'instruction pour créer l'Associated Token Account
-          transaction.add(
-            createAssociatedTokenAccountInstruction(
-              publicKey, // payer
-              escrowTokenAddress, // ata
-              escrowAuthority, // owner (PDA)
-              ytMint // mint
-            )
-          );
-
-          // Envoyer la transaction
-          const signature = await sendTransaction(transaction, connection);
-          await connection.confirmTransaction(signature, 'confirmed');
-          
-          console.log("✅ Compte escrow créé avec succès:", signature);
-        } catch (createError) {
-          console.error("Erreur lors de la création du compte escrow:", createError);
-          alert("Impossible de créer le compte escrow: " + (createError as Error).message);
-          return;
-        }
-      }
+      // Pour l'exemple, nous utilisons des adresses placeholder
+      // Dans un vrai environnement, ces adresses seraient dérivées correctement
+      const ytTokenAccount = new PublicKey("11111111111111111111111111111111");
+      const escrowAccount = new PublicKey("11111111111111111111111111111111");
 
       await listYT(
         ytTokenAccount,
-        escrowTokenAddress,
+        escrowAccount,
         priceMicroUnits,
         amountMicroUnits
       );
 
       alert('Listing créé avec succès !');
-      setCreateForm({ selectedYtToken: '', ytAmount: '', pricePerToken: '' });
+      setCreateForm({ ytAmount: '', pricePerToken: '', selectedStrategy: '' });
       setCreateListingOpen(false);
       await fetchListings();
 
@@ -251,6 +180,8 @@ export function MarketplacePage() {
 
     setBuyLoading(true);
     try {
+      const amount = parseFloat(buyForm.amount);
+      
       // Adresses placeholder - dans un vrai environnement, ces adresses seraient dérivées
       const buyerTokenAccount = new PublicKey("11111111111111111111111111111111");
       const buyerYtAccount = new PublicKey("11111111111111111111111111111111");
@@ -307,6 +238,15 @@ export function MarketplacePage() {
       setCancelLoading(null);
     }
   };
+
+  // Filtrer les listings
+  const myListings = enrichedListings.filter(listing => 
+    publicKey && listing.seller === publicKey.toBase58()
+  );
+
+  const activeListings = enrichedListings.filter(listing => 
+    listing.active && (!publicKey || listing.seller !== publicKey.toBase58())
+  );
 
   // Composant pour afficher un listing
   const ListingCard = ({ listing, showActions = true, isMyListing = false }: { 
@@ -466,27 +406,6 @@ export function MarketplacePage() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
                 Actualiser
               </Button>
-              
-              {/* Debug button - temporaire */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  console.log("🐛 Debug: Force fetch listings");
-                  console.log("🐛 Contract service:", contractService);
-                  console.log("🐛 User yield tokens:", userYieldTokens);
-                  if (contractService) {
-                    try {
-                      const rawListings = await contractService.getAllListings();
-                      console.log("🐛 Raw listings result:", rawListings);
-                    } catch (error) {
-                      console.error("🐛 Error in debug fetch:", error);
-                    }
-                  }
-                }}
-              >
-                🐛 Debug
-              </Button>
             </div>
           </div>
 
@@ -546,9 +465,6 @@ export function MarketplacePage() {
           </div>
         </div>
 
-        {/* WalletInfo Component */}
-        <WalletInfo />
-
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
           <TabsList className="grid w-full grid-cols-3">
@@ -588,109 +504,93 @@ export function MarketplacePage() {
           <TabsContent value="sell" className="space-y-6 mt-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Créer un Listing</h2>
-              <Button onClick={() => setCreateListingOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Nouveau Listing
-              </Button>
-            </div>
-
-            {/* Modal pour créer un listing */}
-            {createListingOpen && (
-              <Card className="max-w-md mx-auto">
-                <CardHeader>
-                  <CardTitle>Créer un Listing YT</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Vendez vos Yield Tokens sur le marketplace
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="ytToken">YT Token à vendre</Label>
-                    <select
-                      id="ytToken"
-                      className="w-full mt-1 p-2 border rounded-md bg-background"
-                      value={createForm.selectedYtToken}
-                      onChange={(e) => setCreateForm({...createForm, selectedYtToken: e.target.value})}
-                    >
-                      <option value="">Sélectionnez un YT Token</option>
-                      {userYieldTokens.map((ytToken) => (
-                        <option key={ytToken.mint} value={ytToken.mint}>
-                          {ytToken.symbol} - {ytToken.amount.toFixed(4)} disponible
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="amount">Quantité YT</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      placeholder="Ex: 100"
-                      value={createForm.ytAmount}
-                      onChange={(e) => setCreateForm({...createForm, ytAmount: e.target.value})}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="price">Prix par Token (USDC)</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      step="0.0001"
-                      placeholder="Ex: 0.95"
-                      value={createForm.pricePerToken}
-                      onChange={(e) => setCreateForm({...createForm, pricePerToken: e.target.value})}
-                    />
-                  </div>
-
-                  {createForm.ytAmount && createForm.pricePerToken && (
-                    <div className="p-3 bg-muted rounded-md">
-                      <p className="text-sm font-medium">Résumé</p>
-                      <p className="text-xs text-muted-foreground">
-                        Total: {(parseFloat(createForm.ytAmount || '0') * parseFloat(createForm.pricePerToken || '0')).toFixed(2)} USDC
-                      </p>
+              <Dialog open={createListingOpen} onOpenChange={setCreateListingOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Nouveau Listing
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Créer un Listing YT</DialogTitle>
+                    <DialogDescription>
+                      Vendez vos Yield Tokens sur le marketplace
+                    </DialogDescription>
+                  </DialogHeader>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="strategy">Stratégie</Label>
+                      <select
+                        id="strategy"
+                        className="w-full mt-1 p-2 border rounded-md bg-background"
+                        value={createForm.selectedStrategy}
+                        onChange={(e) => setCreateForm({...createForm, selectedStrategy: e.target.value})}
+                      >
+                        <option value="">Sélectionnez une stratégie</option>
+                        {strategies.map((strategy) => (
+                          <option key={strategy.id} value={strategy.id}>
+                            {strategy.tokenSymbol} - {(strategy.rewardApy / 10000).toFixed(1)}% APY
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  )}
 
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline"
-                      onClick={() => setCreateListingOpen(false)}
-                      className="flex-1"
-                    >
-                      Annuler
-                    </Button>
+                    <div>
+                      <Label htmlFor="amount">Quantité YT</Label>
+                      <Input
+                        id="amount"
+                        type="number"
+                        placeholder="Ex: 100"
+                        value={createForm.ytAmount}
+                        onChange={(e) => setCreateForm({...createForm, ytAmount: e.target.value})}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="price">Prix par Token (USDC)</Label>
+                      <Input
+                        id="price"
+                        type="number"
+                        step="0.0001"
+                        placeholder="Ex: 0.95"
+                        value={createForm.pricePerToken}
+                        onChange={(e) => setCreateForm({...createForm, pricePerToken: e.target.value})}
+                      />
+                    </div>
+
+                    {createForm.ytAmount && createForm.pricePerToken && (
+                      <div className="p-3 bg-muted rounded-md">
+                        <p className="text-sm font-medium">Résumé</p>
+                        <p className="text-xs text-muted-foreground">
+                          Total: {(parseFloat(createForm.ytAmount || '0') * parseFloat(createForm.pricePerToken || '0')).toFixed(2)} USDC
+                        </p>
+                      </div>
+                    )}
+
                     <Button 
                       onClick={handleCreateListing}
                       disabled={createLoading}
-                      className="flex-1"
+                      className="w-full"
                     >
-                      {createLoading ? 'Création...' : 'Créer'}
+                      {createLoading ? 'Création...' : 'Créer le Listing'}
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                </DialogContent>
+              </Dialog>
+            </div>
 
             {/* Instructions */}
             <Card>
               <CardContent className="p-6">
                 <h3 className="font-semibold mb-3">Comment vendre vos YT ?</h3>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>1. Sélectionnez le YT Token que vous voulez vendre</p>
+                  <p>1. Sélectionnez la stratégie dont vous voulez vendre les tokens</p>
                   <p>2. Indiquez la quantité de Yield Tokens à vendre</p>
                   <p>3. Fixez votre prix par token en USDC</p>
                   <p>4. Confirmez la création de votre listing</p>
                 </div>
-                
-                {userYieldTokens.length === 0 && (
-                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
-                    <p className="text-sm text-yellow-700 dark:text-yellow-400">
-                      Vous n'avez aucun YT Token à vendre. Vous devez d'abord déposer dans une stratégie pour obtenir des YT.
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -736,18 +636,20 @@ export function MarketplacePage() {
           </TabsContent>
         </Tabs>
 
-        {/* Modal d'achat */}
-        {buyDialogOpen && selectedListing && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md mx-4">
-              <CardHeader>
-                <CardTitle>Acheter des YT</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Achat de {selectedListing.tokenSymbol} Yield Tokens
-                </p>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
+        {/* Dialog d'achat */}
+        <Dialog open={buyDialogOpen} onOpenChange={setBuyDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Acheter des YT</DialogTitle>
+              <DialogDescription>
+                {selectedListing && (
+                  <>Achat de {selectedListing.tokenSymbol} Yield Tokens</>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedListing && (
+              <div className="space-y-4">
                 <div className="p-3 bg-muted rounded-md">
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <span>Prix par token:</span>
@@ -778,30 +680,17 @@ export function MarketplacePage() {
                   </div>
                 )}
 
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                      setBuyDialogOpen(false);
-                      setSelectedListing(null);
-                      setBuyForm({ amount: '' });
-                    }}
-                    className="flex-1"
-                  >
-                    Annuler
-                  </Button>
-                  <Button 
-                    onClick={handleBuyYT}
-                    disabled={buyLoading || !buyForm.amount}
-                    className="flex-1"
-                  >
-                    {buyLoading ? 'Achat...' : 'Acheter'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+                <Button 
+                  onClick={handleBuyYT}
+                  disabled={buyLoading || !buyForm.amount}
+                  className="w-full"
+                >
+                  {buyLoading ? 'Achat en cours...' : 'Confirmer l\'Achat'}
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
