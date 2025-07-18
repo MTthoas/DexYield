@@ -2,7 +2,15 @@ import { useState, useCallback } from 'react';
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, getAccount } from '@solana/spl-token';
+import { 
+  getAssociatedTokenAddress, 
+  TOKEN_PROGRAM_ID, 
+  createAssociatedTokenAccountInstruction, 
+  getAccount,
+  createSyncNativeInstruction,
+  NATIVE_MINT,
+  createCloseAccountInstruction
+} from '@solana/spl-token';
 import { useContracts } from './useContracts';
 import { LENDING_PROGRAM_ID } from '../lib/constants';
 
@@ -153,13 +161,27 @@ export const useLendingActions = () => {
       const strategyPubkey = new PublicKey(strategyAddress);
       
       // Récupérer les données de la stratégie pour obtenir le YT mint
-      const { ytMint } = await getStrategyData(strategyAddress);
+      const { ytMint, strategy } = await getStrategyData(strategyAddress);
+      
+      // Pour le vault PDA, utiliser l'adresse token de la stratégie (pas l'adresse corrigée)
+      const strategyTokenMint = new PublicKey(strategy.tokenAddress);
       
       // 1. Compte token de l'utilisateur
       let userTokenAccount: PublicKey;
       if (tokenMint.toString() === "So11111111111111111111111111111111111111112") {
-        // Pour SOL natif, utiliser le wallet comme source
-        userTokenAccount = publicKey;
+        // Pour SOL natif, créer un compte wSOL (Wrapped SOL)
+        userTokenAccount = await getAssociatedTokenAddress(
+          tokenMint,
+          publicKey
+        );
+        
+        // Vérifier si le compte wSOL existe, sinon le créer
+        try {
+          await getAccount(connection, userTokenAccount);
+        } catch (error) {
+          // Le compte n'existe pas, le créer dans la transaction
+          console.log('🔄 Compte wSOL non trouvé, il sera créé dans la transaction');
+        }
       } else {
         // Pour les autres tokens, créer automatiquement l'ATA si nécessaire
         try {
@@ -197,8 +219,8 @@ export const useLendingActions = () => {
       const ytMintAddress = new PublicKey(ytMint);
       const userYtAccount = await ensureYtAccountExists(ytMintAddress, publicKey);
 
-      // 3. Vault PDA
-      const [vaultPda] = await findVaultPDA(tokenMint, strategyId);
+      // 3. Vault PDA - IMPORTANT: utiliser l'adresse token de la stratégie
+      const [vaultPda] = await findVaultPDA(strategyTokenMint, strategyId);
 
       // 5. Conversion du montant avec les décimales
       const amountBN = new BN(amount * Math.pow(10, tokenDecimals));
@@ -215,26 +237,97 @@ export const useLendingActions = () => {
         strategy: strategyPubkey.toString(),
         userTokenAccount: userTokenAccount.toString(),
         userYtAccount: userYtAccount.toString(),
-        tokenMint: tokenMint.toString(),
+        tokenMint: strategyTokenMint.toString(), // Utiliser l'adresse de la stratégie
+        correctedTokenMint: tokenMint.toString(), // Pour debug
         vaultAccount: vaultPda.toString(),
         ytMint: ytMintAddress.toString(),
       });
 
-      const txId = await lendingProgram.methods
-        .deposit(amountBN)
-        .accounts({
-          user: publicKey,
-          userDeposit: userDepositPda,
-          strategy: strategyPubkey,
-          userTokenAccount: userTokenAccount,
-          userYtAccount: userYtAccount,
-          tokenMint: tokenMint,  // ← Le compte manquant !
-          vaultAccount: vaultPda,
-          ytMint: ytMintAddress,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      let txId: string;
+
+      // Gérer différemment SOL natif et SPL tokens
+      if (tokenMint.toString() === "So11111111111111111111111111111111111111112") {
+        // Pour SOL natif, créer une transaction complexe avec wSOL
+        console.log('🔄 Handling native SOL deposit with wSOL...');
+        
+        const transaction = new Transaction();
+        
+        // 1. Créer le compte wSOL associé si nécessaire
+        try {
+          await getAccount(connection, userTokenAccount);
+          console.log('✅ Compte wSOL existe déjà');
+        } catch (error) {
+          console.log('🔧 Création du compte wSOL...');
+          transaction.add(
+            createAssociatedTokenAccountInstruction(
+              publicKey, // payer
+              userTokenAccount, // associatedToken
+              publicKey, // owner
+              tokenMint // mint (SOL natif)
+            )
+          );
+        }
+
+        // 2. Transférer SOL vers le compte wSOL
+        const lamports = amountBN.toNumber(); // amountBN est déjà en lamports
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: userTokenAccount,
+            lamports: lamports,
+          })
+        );
+
+        // 3. Synchroniser le compte wSOL
+        transaction.add(
+          createSyncNativeInstruction(userTokenAccount)
+        );
+
+        // 4. Ajouter l'instruction de dépôt du programme lending
+        const depositInstruction = await lendingProgram.methods
+          .deposit(amountBN)
+          .accounts({
+            user: publicKey,
+            userDeposit: userDepositPda,
+            strategy: strategyPubkey,
+            userTokenAccount: userTokenAccount,
+            userYtAccount: userYtAccount,
+            tokenMint: strategyTokenMint, // Utiliser l'adresse de la stratégie
+            vaultAccount: vaultPda,
+            ytMint: ytMintAddress,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .instruction();
+        
+        transaction.add(depositInstruction);
+
+        // 5. Envoyer la transaction complète
+        if (!sendTransaction) {
+          throw new Error('Wallet sendTransaction not available');
+        }
+
+        txId = await sendTransaction(transaction, connection);
+        await connection.confirmTransaction(txId, 'confirmed');
+        
+      } else {
+        // Pour les SPL tokens, utiliser la méthode normale
+        txId = await lendingProgram.methods
+          .deposit(amountBN)
+          .accounts({
+            user: publicKey,
+            userDeposit: userDepositPda,
+            strategy: strategyPubkey,
+            userTokenAccount: userTokenAccount,
+            userYtAccount: userYtAccount,
+            tokenMint: strategyTokenMint, // Utiliser l'adresse de la stratégie
+            vaultAccount: vaultPda,
+            ytMint: ytMintAddress,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+      }
 
       console.log("✅ Dépôt effectué avec succès !", txId);
       return txId;
@@ -279,24 +372,53 @@ export const useLendingActions = () => {
       const strategyPubkey = new PublicKey(strategyAddress);
       
       // Récupérer les données de la stratégie pour obtenir le YT mint
-      const { ytMint } = await getStrategyData(strategyAddress);
+      const { ytMint, strategy } = await getStrategyData(strategyAddress);
       
-      // 1. Compte token de l'utilisateur
-      const userTokenAccounts = await connection.getTokenAccountsByOwner(
-        publicKey, 
-        { mint: tokenMint }
-      );
-      if (!userTokenAccounts.value.length) {
-        throw new Error(`Aucun compte ${tokenMint.toString()} trouvé pour ce wallet`);
+      // Pour le vault PDA, utiliser l'adresse token de la stratégie (pas l'adresse corrigée)
+      const strategyTokenMint = new PublicKey(strategy.tokenAddress);
+      
+      // 1. Compte token de l'utilisateur - IMPORTANT: utiliser le même mint que la stratégie
+      let userTokenAccount: PublicKey;
+      if (tokenMint.toString() === "So11111111111111111111111111111111111111112") {
+        // Pour SOL natif, le smart contract stocke la stratégie avec NATIVE_MINT (wSOL)
+        // Donc on doit utiliser le compte wSOL associé avec le strategyTokenMint
+        userTokenAccount = await getAssociatedTokenAddress(
+          strategyTokenMint, // Utiliser le mint de la stratégie (NATIVE_MINT pour SOL)
+          publicKey
+        );
+        
+        console.log('🔧 Using wSOL account for SOL withdraw:', {
+          userTokenAccount: userTokenAccount.toString(),
+          strategyTokenMint: strategyTokenMint.toString(),
+          tokenMint: tokenMint.toString()
+        });
+        
+        // Vérifier si le compte wSOL existe, le créer si nécessaire
+        try {
+          await getAccount(connection, userTokenAccount);
+          console.log('✅ Compte wSOL existe déjà pour withdraw');
+        } catch (error) {
+          console.log('🔧 Compte wSOL non trouvé, il sera créé pour le withdraw...');
+          // Le compte sera créé dans la transaction de withdraw
+        }
+      } else {
+        // Pour les SPL tokens, utiliser le mint de la stratégie
+        const userTokenAccounts = await connection.getTokenAccountsByOwner(
+          publicKey, 
+          { mint: strategyTokenMint } // Utiliser le mint de la stratégie, pas le mint corrigé
+        );
+        if (!userTokenAccounts.value.length) {
+          throw new Error(`Aucun compte ${strategyTokenMint.toString()} trouvé pour ce wallet`);
+        }
+        userTokenAccount = userTokenAccounts.value[0].pubkey;
       }
-      const userTokenAccount = userTokenAccounts.value[0].pubkey;
 
       // 2. Compte YT de l'utilisateur (s'assurer qu'il existe)
       const ytMintAddress = new PublicKey(ytMint);
       const userYtAccount = await ensureYtAccountExists(ytMintAddress, publicKey);
 
-      // 3. Vault PDA
-      const [vaultPda] = await findVaultPDA(tokenMint, strategyId);
+      // 3. Vault PDA - IMPORTANT: utiliser l'adresse token de la stratégie
+      const [vaultPda] = await findVaultPDA(strategyTokenMint, strategyId);
 
       // 5. Conversion du montant avec les décimales
       const amountBN = new BN(amount * Math.pow(10, tokenDecimals));
@@ -313,32 +435,108 @@ export const useLendingActions = () => {
         strategy: strategyPubkey.toString(),
         userTokenAccount: userTokenAccount.toString(),
         userYtAccount: userYtAccount.toString(),
-        tokenMint: tokenMint.toString(),
+        tokenMint: strategyTokenMint.toString(), // Utiliser l'adresse de la stratégie
+        correctedTokenMint: tokenMint.toString(), // Pour debug
         vaultAccount: vaultPda.toString(),
         ytMint: ytMintAddress.toString(),
+        amountBN: amountBN.toString(),
       });
 
-      const txId = await lendingProgram.methods
-        .withdraw(amountBN)
-        .accounts({
-          user: publicKey,
-          userDeposit: userDepositPda,
-          strategy: strategyPubkey,
-          userTokenAccount: userTokenAccount,
-          userYtAccount: userYtAccount,
-          tokenMint: tokenMint,  // ← Le compte manquant !
-          vaultAccount: vaultPda,
-          ytMint: ytMintAddress,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      // Vérification supplémentaire pour SOL : s'assurer que tous les comptes utilisent le bon mint
+      if (tokenMint.toString() === "So11111111111111111111111111111111111111112") {
+        console.log('🔍 SOL Withdraw Verification:', {
+          strategyTokenMintIsNative: strategyTokenMint.toString() === "So11111111111111111111111111111111111111112",
+          expectedWSOLAccount: userTokenAccount.toString(),
+          vaultAccountForMint: vaultPda.toString()
+        });
+      }
+
+      let txId: string;
+
+      // Gérer différemment SOL natif et SPL tokens pour le withdraw aussi
+      if (tokenMint.toString() === "So11111111111111111111111111111111111111112") {
+        // Pour SOL natif, créer une transaction avec création du compte wSOL si nécessaire
+        console.log('🔄 Handling native SOL withdraw with automatic wSOL account creation...');
+        
+        const transaction = new Transaction();
+        
+        // 1. Créer le compte wSOL associé si nécessaire
+        try {
+          await getAccount(connection, userTokenAccount);
+          console.log('✅ Compte wSOL existe déjà pour withdraw');
+        } catch (error) {
+          console.log('🔧 Création du compte wSOL pour withdraw...');
+          transaction.add(
+            createAssociatedTokenAccountInstruction(
+              publicKey, // payer
+              userTokenAccount, // associatedToken
+              publicKey, // owner
+              strategyTokenMint // mint (NATIVE_MINT pour SOL)
+            )
+          );
+        }
+
+        // 2. Ajouter l'instruction de withdraw du programme lending
+        const withdrawInstruction = await lendingProgram.methods
+          .withdraw(amountBN)
+          .accounts({
+            user: publicKey,
+            userDeposit: userDepositPda,
+            strategy: strategyPubkey,
+            userTokenAccount: userTokenAccount,
+            userYtAccount: userYtAccount,
+            tokenMint: strategyTokenMint,  // CRITIQUE: Utiliser exactement le mint de la stratégie
+            vaultAccount: vaultPda,
+            ytMint: ytMintAddress,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .instruction();
+        
+        transaction.add(withdrawInstruction);
+
+        // 3. Envoyer la transaction complète
+        if (!sendTransaction) {
+          throw new Error('Wallet sendTransaction not available');
+        }
+
+        txId = await sendTransaction(transaction, connection);
+        await connection.confirmTransaction(txId, 'confirmed');
+        
+        // TODO: Ajouter plus tard la logique pour unwrap le wSOL si l'utilisateur le souhaite
+        
+      } else {
+        // Pour les SPL tokens, utiliser la méthode normale
+        txId = await lendingProgram.methods
+          .withdraw(amountBN)
+          .accounts({
+            user: publicKey,
+            userDeposit: userDepositPda,
+            strategy: strategyPubkey,
+            userTokenAccount: userTokenAccount,
+            userYtAccount: userYtAccount,
+            tokenMint: strategyTokenMint,  // CRITIQUE: Utiliser exactement le mint de la stratégie
+            vaultAccount: vaultPda,
+            ytMint: ytMintAddress,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+      }
 
       console.log("✅ Retrait effectué avec succès !", txId);
       return txId;
 
     } catch (err) {
       console.error('❌ Erreur lors du retrait:', err);
+      
+      // Log détaillé pour les erreurs de transaction
+      if (err && typeof err === 'object' && 'transactionLogs' in err) {
+        console.error('📋 Transaction logs:', (err as any).transactionLogs);
+        console.error('📋 Transaction message:', (err as any).transactionMessage);
+        console.error('📋 Program error stack:', (err as any).programErrorStack);
+      }
+      
       setError(err instanceof Error ? err.message : 'Failed to withdraw');
       throw err;
     } finally {

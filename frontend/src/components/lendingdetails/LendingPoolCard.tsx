@@ -166,6 +166,17 @@ export function LendingPoolCard({
       ? checkRedeemAvailability(pool.userDepositTime)
       : { available: false, timeRemaining: 0, availableAt: null };
 
+  // Debug pour voir les données du pool
+  console.log(`🏊 Pool Card Debug for ${pool.token.symbol}:`, {
+    poolId: pool.id,
+    userDeposit: pool.userDeposit,
+    userYieldEarned: pool.userYieldEarned,
+    userDepositTime: pool.userDepositTime,
+    hasDeposit: pool.userDeposit !== undefined && pool.userDeposit > 0,
+    hasYield: pool.userYieldEarned !== undefined && pool.userYieldEarned > 0,
+    claimStatus: claimStatus
+  });
+
   return (
     <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300 hover:border-white/20 group">
       <div className="p-6 space-y-6">
@@ -228,8 +239,15 @@ export function LendingPoolCard({
 
         {/* Debug: Affichage brut des données pool */}
         <details className="bg-black/40 rounded p-2 text-xs text-white/60 mb-2">
-          <summary>Debug: Raw Pool Data</summary>
-          <pre>{JSON.stringify(pool, null, 2)}</pre>
+          <summary>Debug: Raw Pool Data for {pool.token.symbol}</summary>
+          <pre>{JSON.stringify({
+            userDeposit: pool.userDeposit,
+            userYieldEarned: pool.userYieldEarned,
+            userDepositTime: pool.userDepositTime,
+            claimStatus: claimStatus,
+            tokenSymbol: pool.token.symbol,
+            poolId: pool.id
+          }, null, 2)}</pre>
         </details>
 
         {/* Section spéciale pour claim uniquement (si yield sans dépôts actifs) */}

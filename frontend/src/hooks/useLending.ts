@@ -269,9 +269,16 @@ export const useLending = () => {
         if (publicKey && contractService.getUserDepositSimplified) {
           try {
             userDepositInfo = await contractService.getUserDepositSimplified(publicKey, strategyPubkey);
-            console.log(`User deposit for strategy ${strategyPubkey.toBase58()}:`, userDepositInfo);
+            console.log(`🔍 User deposit for strategy ${strategyPubkey.toBase58()} (${TOKEN_SYMBOLS[mintStr] || 'UNKNOWN'}):`, userDepositInfo);
+            if (userDepositInfo?.exists) {
+              console.log(`✅ Found user deposit for ${TOKEN_SYMBOLS[mintStr] || 'UNKNOWN'} strategy:`, {
+                amount: userDepositInfo.data.amount?.toNumber(),
+                yieldEarned: userDepositInfo.data.yieldEarned?.toNumber(),
+                depositTime: userDepositInfo.data.depositTime?.toNumber()
+              });
+            }
           } catch (err) {
-            console.log(`No user deposit found for strategy ${strategyPubkey.toBase58()}`);
+            console.log(`❌ No user deposit found for strategy ${strategyPubkey.toBase58()} (${TOKEN_SYMBOLS[mintStr] || 'UNKNOWN'}):`, err);
           }
         }
         

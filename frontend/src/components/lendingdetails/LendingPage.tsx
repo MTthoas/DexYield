@@ -14,6 +14,7 @@ import {
   DEVNET_CONFIG,
   DEFAULT_POOL_OWNER,
   USDC_MINT,
+  NATIVE_SOL_MINT,
 } from "@/lib/constants";
 import type { LendingPool, PoolFilters, Strategy } from "./Lending.type";
 import { WalletInfo } from "@/components/WalletInfo";
@@ -73,13 +74,22 @@ const createPoolsFromStrategies = (
   );
 
   return uniqueStrategies.map((strategy) => {
-    const SOL_MINT = "So11111111111111111111111111111111111111112";
     const tokenAddressStr =
       strategy.tokenSymbol === "SOL"
-        ? SOL_MINT
+        ? NATIVE_SOL_MINT.toString()
         : getPubkeyString(strategy.tokenAddress);
     const tokenConfig = TOKENS.find((t) => t.mint === tokenAddressStr);
     const userDeposit = userDeposits?.find((d) => d.strategy === strategy.id);
+    
+    // Debug pour voir les données utilisateur
+    console.log(`🔍 Debug pool creation for ${strategy.tokenSymbol}:`, {
+      strategyId: strategy.id,
+      userDeposit: userDeposit,
+      userDepositAmount: userDeposit ? getBNNumber(userDeposit.amount) : 0,
+      userYieldEarned: userDeposit ? getBNNumber(userDeposit.yieldEarned) : 0,
+      userDepositTime: userDeposit ? userDeposit.depositTime : undefined,
+      hasUserDeposit: !!userDeposit
+    });
     // Conversion des champs BN en nombre natif
     const rewardApy = getBNNumber(strategy.rewardApy);
     const totalDeposited = getBNNumber(strategy.totalDeposited);
@@ -530,7 +540,12 @@ export default function LendingPage() {
         const strategy = strategies.find((s) => s.id === poolId);
         if (!strategy) throw new Error("Strategy not found");
 
-        const tokenMint = new PublicKey(strategy.tokenAddress);
+        // Corriger le token mint pour SOL - utiliser le vrai SOL natif
+        const tokenMintAddress = strategy.tokenSymbol === "SOL" 
+          ? NATIVE_SOL_MINT.toString() 
+          : strategy.tokenAddress;
+        
+        const tokenMint = new PublicKey(tokenMintAddress);
         const tokenDecimals =
           TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] ||
           6;
@@ -570,7 +585,12 @@ export default function LendingPage() {
         const strategy = strategies.find((s) => s.id === poolId);
         if (!strategy) throw new Error("Strategy not found");
 
-        const tokenMint = new PublicKey(strategy.tokenAddress);
+        // Corriger le token mint pour SOL - utiliser le vrai SOL natif
+        const tokenMintAddress = strategy.tokenSymbol === "SOL" 
+          ? NATIVE_SOL_MINT.toString() 
+          : strategy.tokenAddress;
+        
+        const tokenMint = new PublicKey(tokenMintAddress);
         const tokenDecimals =
           TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] ||
           6;
@@ -676,7 +696,12 @@ export default function LendingPage() {
           return;
         }
 
-        const tokenMint = new PublicKey(strategy.tokenAddress);
+        // Corriger le token mint pour SOL - utiliser le vrai SOL natif
+        const tokenMintAddress = strategy.tokenSymbol === "SOL" 
+          ? NATIVE_SOL_MINT.toString() 
+          : strategy.tokenAddress;
+        
+        const tokenMint = new PublicKey(tokenMintAddress);
 
         // Appel de la redeem with strategy information
         await redeem(
