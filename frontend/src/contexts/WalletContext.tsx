@@ -25,7 +25,13 @@ export function WalletContextProvider({ children }: WalletContextProviderProps) 
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect={false}>
+      <WalletProvider 
+        wallets={wallets} 
+        autoConnect={true}
+        onError={(error) => {
+          console.error('Wallet connection error:', error);
+        }}
+      >
         <WalletModalProvider>
           {children}
         </WalletModalProvider>

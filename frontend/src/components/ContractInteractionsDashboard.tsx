@@ -75,57 +75,78 @@ export function ContractInteractionsDashboard() {
   const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h');
   const [copying, setCopying] = useState<string | null>(null);
 
-  // Fetch transactions from program accounts
+  // Helper function to add delay between requests
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Fetch transactions from program accounts with rate limiting
   const fetchTransactions = useCallback(async () => {
     if (!connection || !contractService) return;
 
     setLoading(true);
     try {
-      // Get all confirmed signatures for our program IDs
+      // Get all confirmed signatures for our program IDs with reduced limits
       const lendingSignatures = await connection.getSignaturesForAddress(
         LENDING_PROGRAM_ID,
-        { limit: 100 }
+        { limit: 20 } // Reduced from 100 to 20
       );
+
+      await delay(100); // Add delay between requests
 
       const marketplaceSignatures = await connection.getSignaturesForAddress(
         MARKETPLACE_PROGRAM_ID,
-        { limit: 100 }
+        { limit: 20 } // Reduced from 100 to 20
       );
 
       const allSignatures = [...lendingSignatures, ...marketplaceSignatures];
       
-      // Process transactions
-      const txPromises = allSignatures.map(async (sig) => {
-        try {
-          const tx = await connection.getTransaction(sig.signature, {
-            maxSupportedTransactionVersion: 0
-          });
+      // Process transactions with batching and rate limiting
+      const processedTxs: Transaction[] = [];
+      const batchSize = 5; // Process only 5 transactions at a time
+      
+      for (let i = 0; i < Math.min(allSignatures.length, 20); i += batchSize) {
+        const batch = allSignatures.slice(i, i + batchSize);
+        
+        const batchPromises = batch.map(async (sig) => {
+          try {
+            // Add delay between transaction fetches
+            await delay(50);
+            
+            const tx = await connection.getTransaction(sig.signature, {
+              maxSupportedTransactionVersion: 0
+            });
 
-          if (!tx) return null;
+            if (!tx) return null;
 
-          // Determine transaction type based on instruction data
-          const type = determineTransactionType(tx);
-          
-          // Extract user address (first account that's not a program)
-          const accounts = tx.transaction.message.getAccountKeys();
-          const user = accounts.get(0)?.toString() || 'Unknown';
+            // Determine transaction type based on instruction data
+            const type = determineTransactionType(tx);
+            
+            // Extract user address (first account that's not a program)
+            const accounts = tx.transaction.message.getAccountKeys();
+            const user = accounts.get(0)?.toString() || 'Unknown';
 
-          return {
-            signature: sig.signature,
-            type,
-            timestamp: (tx.blockTime || 0) * 1000,
-            user,
-            status: sig.err ? 'failed' : 'success',
-            programId: type.includes('strategy') ? LENDING_PROGRAM_ID.toString() : MARKETPLACE_PROGRAM_ID.toString(),
-            details: tx
-          } as Transaction;
-        } catch (error) {
-          console.error('Error processing transaction:', error);
-          return null;
+            return {
+              signature: sig.signature,
+              type,
+              timestamp: (tx.blockTime || 0) * 1000,
+              user,
+              status: sig.err ? 'failed' : 'success',
+              programId: type.includes('strategy') ? LENDING_PROGRAM_ID.toString() : MARKETPLACE_PROGRAM_ID.toString(),
+              details: tx
+            } as Transaction;
+          } catch (error) {
+            console.error('Error processing transaction:', error);
+            return null;
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        processedTxs.push(...batchResults.filter(Boolean) as Transaction[]);
+        
+        // Add delay between batches
+        if (i + batchSize < allSignatures.length) {
+          await delay(200);
         }
-      });
-
-      const processedTxs = (await Promise.all(txPromises)).filter(Boolean) as Transaction[];
+      }
       
       // Sort by timestamp (newest first)
       processedTxs.sort((a, b) => b.timestamp - a.timestamp);
@@ -150,6 +171,16 @@ export function ContractInteractionsDashboard() {
 
     } catch (error) {
       console.error('Error fetching transactions:', error);
+      // Show user-friendly error message
+      setTransactions([]);
+      setStats({
+        totalTransactions: 0,
+        totalUsers: 0,
+        totalVolume: 0,
+        activeStrategies: 0,
+        last24hTransactions: 0,
+        last24hVolume: 0
+      });
     } finally {
       setLoading(false);
     }
@@ -232,11 +263,17 @@ export function ContractInteractionsDashboard() {
     return `${address.slice(0, 4)}...${address.slice(-4)}`;
   };
 
-  useEffect(() => {
-    if (connected && contractService) {
-      fetchTransactions();
-    }
-  }, [connected, contractService, fetchTransactions]);
+  // Temporarily disable auto-loading to prevent rate limiting
+  // useEffect(() => {
+  //   if (connected && contractService) {
+  //     // Add a slight delay to prevent immediate API calls
+  //     const timeoutId = setTimeout(() => {
+  //       fetchTransactions();
+  //     }, 1000);
+
+  //     return () => clearTimeout(timeoutId);
+  //   }
+  // }, [connected, contractService, fetchTransactions]);
 
   return (
     <div className="min-h-screen bg-black text-white pt-20">
@@ -383,13 +420,21 @@ export function ContractInteractionsDashboard() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="w-8 h-8 border-2 border-white/20 border-t-blue-400 rounded-full animate-spin"></div>
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="w-8 h-8 border-2 border-white/20 border-t-blue-400 rounded-full animate-spin mb-4"></div>
+                <p className="text-white/60 text-sm">Loading transactions...</p>
+                <p className="text-white/40 text-xs mt-2">This may take a moment due to rate limiting</p>
               </div>
             ) : filteredTransactions.length === 0 ? (
               <div className="text-center py-12">
                 <Activity className="w-12 h-12 text-white/20 mx-auto mb-4" />
-                <p className="text-white/60">No transactions found</p>
+                <p className="text-white/60">No transactions loaded</p>
+                <p className="text-white/40 text-sm mt-2">
+                  {transactions.length > 0 ? 
+                    'Try adjusting your filters' : 
+                    'Click the Refresh button above to load transactions'
+                  }
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
