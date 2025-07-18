@@ -185,17 +185,17 @@ export default function LendingPage() {
     toggleStrategyStatus,
   } = useLending();
   const {
-    redeem,
     initializeStrategy,
     initializeLendingPool,
     checkRedeemAvailability,
     resetUserYield,
   } = useLendingSimplified();
 
-  // Utiliser le nouveau hook pour les actions deposit/withdraw
+  // Utiliser le nouveau hook pour les actions deposit/withdraw/redeem
   const {
     deposit,
     withdraw,
+    redeem: redeemAction, // Renommer pour éviter le conflit avec l'ancien redeem
     loading: actionsLoading,
     error: actionsError,
   } = useLendingActions();
@@ -703,12 +703,13 @@ export default function LendingPage() {
         
         const tokenMint = new PublicKey(tokenMintAddress);
 
-        // Appel de la redeem with strategy information
-        await redeem(
+        // Appel de la nouvelle fonction redeem basée sur strategies
+        await redeemAction(
+          strategy.id, // strategyAddress
           tokenMint,
-          userYTBalance,
           strategy.strategyId,
-          strategy.id
+          userYTBalance,
+          TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6
         );
 
         toast.success(
@@ -742,7 +743,7 @@ export default function LendingPage() {
       publicKey,
       strategies,
       pools,
-      redeem,
+      redeemAction, // Utiliser la nouvelle fonction redeem
       loadPoolsData,
       loadUserBalances,
     ]
