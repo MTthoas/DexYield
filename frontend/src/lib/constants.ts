@@ -2,7 +2,7 @@ import { PublicKey } from '@solana/web3.js';
 
 // Program IDs - CORRECTED TO MATCH WORKING SCRIPT
 export const LENDING_PROGRAM_ID = new PublicKey('B7eNrb1uJR9risFgqTQhnxKQt18itfVdoz4XYufEAEX8');
-export const MARKETPLACE_PROGRAM_ID = new PublicKey('39GPqWvAfHSWXBeKtjb5ZYk6bimu9LKjLM385Z4GeD8g');
+export const MARKETPLACE_PROGRAM_ID = new PublicKey('9B1oveu4aVQjxboVRa4FYB9iqtbBoQhHy9FNrKNzSM8c');
 
 // Token addresses (devnet)
 export const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
