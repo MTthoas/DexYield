@@ -1,7 +1,61 @@
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Shield, Zap } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useLending } from "@/hooks/useLending";
 
 export function HomeSection() {
+  const { fetchStrategies } = useLending();
+  const [realStats, setRealStats] = useState({
+    totalTVL: 0,
+    activeStrategies: 0,
+    topYields: [] as Array<{token: string, apy: number}>
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadRealData = async () => {
+      try {
+        const strategies = await fetchStrategies();
+        if (strategies && Array.isArray(strategies)) {
+          // Calculate real TVL
+          const totalTVL = strategies.reduce((sum, strategy) => {
+            return sum + (strategy.vaultBalance || 0);
+          }, 0);
+
+          // Get active strategies count
+          const activeStrategies = strategies.filter(s => s.active).length;
+
+          // Get top yields (sort by APY and take top 3)
+          const topYields = strategies
+            .filter(s => s.active)
+            .sort((a, b) => b.rewardApy - a.rewardApy)
+            .slice(0, 3)
+            .map(s => ({
+              token: s.tokenSymbol,
+              apy: s.rewardApy / 100 // Convert from basis points to percentage
+            }));
+
+          setRealStats({
+            totalTVL,
+            activeStrategies,
+            topYields
+          });
+        }
+      } catch (error) {
+        console.error('Error loading real data:', error);
+        // Fallback to empty data instead of fake data
+        setRealStats({
+          totalTVL: 0,
+          activeStrategies: 0,
+          topYields: []
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRealData();
+  }, [fetchStrategies]);
   return (
     <section className="min-h-screen w-screen relative overflow-hidden bg-black pt-16">
       {/* Dynamic background elements */}
@@ -74,19 +128,31 @@ export function HomeSection() {
                       Total Value Locked
                     </span>
                   </div>
-                  <div className="text-3xl font-bold text-white">$2.8B</div>
+                  <div className="text-3xl font-bold text-white">
+                    {loading ? (
+                      <div className="animate-pulse bg-gray-700 h-8 w-20 rounded"></div>
+                    ) : (
+                      `$${realStats.totalTVL.toLocaleString()}`
+                    )}
+                  </div>
                   <div className="text-green-400 text-sm">
-                    +12.5% this month
+                    Live data
                   </div>
                 </div>
 
                 <div className="p-6 rounded-2xl bg-gray-900/50 border border-gray-800 backdrop-blur-sm">
                   <div className="flex items-center gap-3 mb-3">
                     <Zap className="h-5 w-5 text-yellow-400" />
-                    <span className="text-gray-400 text-sm">Active Users</span>
+                    <span className="text-gray-400 text-sm">Active Strategies</span>
                   </div>
-                  <div className="text-3xl font-bold text-white">47.2K</div>
-                  <div className="text-blue-400 text-sm">+1.2K today</div>
+                  <div className="text-3xl font-bold text-white">
+                    {loading ? (
+                      <div className="animate-pulse bg-gray-700 h-8 w-12 rounded"></div>
+                    ) : (
+                      realStats.activeStrategies
+                    )}
+                  </div>
+                  <div className="text-blue-400 text-sm">Available now</div>
                 </div>
               </div>
 
@@ -126,18 +192,33 @@ export function HomeSection() {
                 <span className="text-sm">Current top yields:</span>
               </div>
               <div className="flex gap-8">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">8.5%</div>
-                  <div className="text-gray-500 text-sm">USDC</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">12.3%</div>
-                  <div className="text-gray-500 text-sm">ETH</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">15.7%</div>
-                  <div className="text-gray-500 text-sm">SOL</div>
-                </div>
+                {loading ? (
+                  <>
+                    <div className="text-center">
+                      <div className="animate-pulse bg-gray-700 h-8 w-12 rounded mb-2"></div>
+                      <div className="animate-pulse bg-gray-700 h-4 w-8 rounded"></div>
+                    </div>
+                    <div className="text-center">
+                      <div className="animate-pulse bg-gray-700 h-8 w-12 rounded mb-2"></div>
+                      <div className="animate-pulse bg-gray-700 h-4 w-8 rounded"></div>
+                    </div>
+                    <div className="text-center">
+                      <div className="animate-pulse bg-gray-700 h-8 w-12 rounded mb-2"></div>
+                      <div className="animate-pulse bg-gray-700 h-4 w-8 rounded"></div>
+                    </div>
+                  </>
+                ) : realStats.topYields.length > 0 ? (
+                  realStats.topYields.map((yieldData, index) => (
+                    <div key={index} className="text-center">
+                      <div className="text-2xl font-bold text-white">{yieldData.apy.toFixed(1)}%</div>
+                      <div className="text-gray-500 text-sm">{yieldData.token}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center">
+                    <div className="text-sm text-gray-500">No active strategies</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
