@@ -6,6 +6,7 @@ import { PublicKey } from "@solana/web3.js";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useLending } from "@/hooks/useLending";
 import { useLendingSimplified } from "@/hooks/useLendingSimplified";
+import { useLendingActions } from "@/hooks/useLendingActions";
 import { LendingPoolCard } from "./LendingPoolCard";
 import {
   TOKEN_SYMBOLS,
@@ -120,6 +121,7 @@ const createPoolsFromStrategies = (
       apy: rewardApy / 100, // Convertir basis points en pourcentage
       tvl: tvl, // Toujours dynamique
       totalDeposits: tvlInTokens, // Toujours dynamique
+      totalYieldDistributed: 0, // À calculer en fonction des données réelles
       userDeposit: userDeposit
         ? getBNNumber(userDeposit.amount) /
           Math.pow(10, tokenConfig?.decimals || TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6)
@@ -155,14 +157,20 @@ export default function LendingPage() {
     toggleStrategyStatus,
   } = useLending();
   const {
-    deposit,
-    withdraw,
     redeem,
     initializeStrategy,
     initializeLendingPool,
     checkRedeemAvailability,
     resetUserYield,
   } = useLendingSimplified();
+  
+  // Utiliser le nouveau hook pour les actions deposit/withdraw
+  const {
+    deposit,
+    withdraw,
+    loading: actionsLoading,
+    error: actionsError,
+  } = useLendingActions();
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [pools, setPools] = useState<LendingPool[]>([]);
@@ -505,7 +513,16 @@ export default function LendingPage() {
         if (!strategy) throw new Error("Strategy not found");
 
         const tokenMint = new PublicKey(strategy.tokenAddress);
-        await deposit(tokenMint, amount, strategy.strategyId, strategy.id);
+        const tokenDecimals = TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6;
+        
+        await deposit(
+          strategy.id, // strategyAddress (l'ID de la stratégie qui est l'adresse)
+          tokenMint,
+          strategy.strategyId,
+          amount,
+          tokenDecimals
+        );
+        
         toast.success(
           `Successfully deposited ${amount} ${strategy.tokenSymbol}`
         );
@@ -534,8 +551,16 @@ export default function LendingPage() {
         if (!strategy) throw new Error("Strategy not found");
 
         const tokenMint = new PublicKey(strategy.tokenAddress);
-        // Use DEFAULT_POOL_OWNER as all deposits are in the shared pool
-        await withdraw(tokenMint, amount, strategy.strategyId, DEFAULT_POOL_OWNER);
+        const tokenDecimals = TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6;
+        
+        await withdraw(
+          strategy.id, // strategyAddress (l'ID de la stratégie qui est l'adresse)
+          tokenMint,
+          strategy.strategyId,
+          amount,
+          tokenDecimals
+        );
+        
         toast.success(
           `Successfully withdrew ${amount} ${strategy.tokenSymbol}`
         );
