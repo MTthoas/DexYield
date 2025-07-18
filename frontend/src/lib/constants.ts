@@ -1,7 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
 
-// Program IDs - NEW DEPLOYMENT V3
-export const LENDING_PROGRAM_ID = new PublicKey('B1rfivNAWF6tG4yiKR1fZZoxDcdapFYS9JNDMJDGy7zo');
+// Program IDs - CORRECTED TO MATCH WORKING SCRIPT
+export const LENDING_PROGRAM_ID = new PublicKey('B7eNrb1uJR9risFgqTQhnxKQt18itfVdoz4XYufEAEX8');
 export const MARKETPLACE_PROGRAM_ID = new PublicKey('39GPqWvAfHSWXBeKtjb5ZYk6bimu9LKjLM385Z4GeD8g');
 
 // Token addresses (devnet)
@@ -12,10 +12,10 @@ export const SOL_MINT = new PublicKey('AvfZJvfYHRANjq8s1mdjRDQYeHt8U7YvAWBMjSaBp
 // Default pool owner - NEW DEPLOYMENT (your wallet)
 export const DEFAULT_POOL_OWNER = new PublicKey('9JNZJADgviPnQWKz6sCrXiqvwVwRWcCKmicGYUD2hkdZ');
 
-// Devnet deployed addresses - UPDATED WITH V3 DEPLOYMENT
+// Devnet deployed addresses - CORRECTED TO MATCH WORKING SCRIPT
 export const DEVNET_CONFIG = {
   lending: {
-    programId: new PublicKey('B1rfivNAWF6tG4yiKR1fZZoxDcdapFYS9JNDMJDGy7zo'),
+    programId: new PublicKey('B7eNrb1uJR9risFgqTQhnxKQt18itfVdoz4XYufEAEX8'),
     pool: new PublicKey('11111111111111111111111111111111'), // Will be updated after deployment
     ytMint: new PublicKey('11111111111111111111111111111111'), // Will be updated after deployment
     strategy: new PublicKey('11111111111111111111111111111111'), // Will be updated after deployment

@@ -91,42 +91,23 @@ const createPoolsFromStrategies = (
 
     const userDepositAmount = userDeposit ? getBNNumber(userDeposit.amount) : 0;
 
-    // Utiliser les données du pool en priorité, sinon fallback
-    const poolTotalDeposits = poolData
-      ? getBNNumber(poolData.totalDeposits)
-      : 0;
-
-    // Somme des dépôts: pool total + dépôts individuels des utilisateurs
-    const totalUserDeposits = totalDeposited;
-    const calculatedTotalDeposits = Math.max(
-      poolTotalDeposits,
-      totalUserDeposits,
-      userDepositAmount,
-      0 // Ensure minimum of 0
-    );
-
-    // TVL basé sur les vrais dépôts totaux - si pas de dépôts, afficher 0
-    const tvlInTokens =
-      calculatedTotalDeposits > 0
-        ? calculatedTotalDeposits / Math.pow(10, tokenConfig?.decimals || 6)
-        : 0;
-
+    // Utiliser directement vaultBalance de la stratégie (comme dans le script)
+    const vaultBalance = strategy.vaultBalance || 0;
+    
+    // Calculer TVL basé sur le vault balance réel (comme dans le script)
+    const tvlInTokens = vaultBalance; // vaultBalance est déjà en UI amount
     const tvl = tvlInTokens * tokenPrice;
+    
+    console.log(`🔍 TVL Debug for ${strategy.name}:`, {
+      vaultBalance: strategy.vaultBalance,
+      tvlInTokens,
+      tokenPrice,
+      calculatedTVL: tvl,
+      tokenSymbol: strategy.tokenSymbol,
+      userDeposit: userDeposit,
+      vaultPda: strategy.vaultPda,
+    });
 
-    // Debug TVL calculation
-    // console.log(`🔍 TVL Debug for ${strategy.name}:`, {
-    //   totalDeposited,
-    //   userDepositAmount,
-    //   poolTotalDeposits,
-    //   calculatedTotalDeposits,
-    //   tvlInTokens,
-    //   tokenDecimals: tokenConfig?.decimals || 6,
-    //   tokenPrice,
-    //   calculatedTVL: tvl,
-    //   tokenSymbol: strategy.tokenSymbol,
-    //   userDeposit: userDeposit,
-    //   poolData: poolData,
-    // });
     return {
       id: strategy.id,
       name: strategy.name,
@@ -237,71 +218,13 @@ export default function LendingPage() {
       setStrategies(strategiesData);
 
       if (strategiesData.length > 0) {
-        let userDeposits: any[] = [];
-        // Récupérer les données du pool pour le TVL
-        let poolData = null;
-        try {
-          poolData = await getPool(DEFAULT_POOL_OWNER);
-          console.log("🏊 Pool data:", poolData);
-        } catch (error) {
-          console.error("Error fetching pool data:", error);
-        }
-
-        if (connected && publicKey) {
-          try {
-            userDeposits = await Promise.all(
-              strategiesData.map(async (strategy) => {
-                try {
-                  console.log(
-                    `🔍 Fetching deposit for strategy ${strategy.id}...`
-                  );
-
-                  // Utiliser le PublicKey de la stratégie directement (pas besoin de new PublicKey)
-                  const strategyPubkey = new PublicKey(strategy.id);
-                  const depositRaw = await getUserDeposit(
-                    publicKey, // Corrigé : utiliser le wallet connecté
-                    strategyPubkey
-                  );
-                  console.log(`🔍 depositRaw for ${strategy.id}:`, depositRaw, {
-                    strategyId: strategy.id,
-                    strategyPubkey: strategyPubkey.toBase58(),
-                    owner: publicKey.toString(),
-                    tokenSymbol: strategy.tokenSymbol,
-                    tokenAddress: strategy.tokenAddress,
-                    publicKey: publicKey?.toBase58?.() || publicKey,
-                  });
-
-                  if (
-                    depositRaw &&
-                    typeof depositRaw === "object" &&
-                    depositRaw.amount !== undefined
-                  ) {
-                    const userDepositData = {
-                      amount: getBNNumber(depositRaw.amount) || 0,
-                      yieldEarned: getBNNumber(depositRaw.yieldEarned) || 0,
-                      depositTime: getBNNumber(depositRaw.depositTime) || 0,
-                      strategy: strategy.id,
-                    };
-                    console.log(`✅ Found user deposit:`, userDepositData);
-                    return userDepositData;
-                  }
-                  console.log(`❌ No valid deposit found for ${strategy.id}`);
-                  return null;
-                } catch (error) {
-                  console.log(
-                    `❌ Error fetching deposit for ${strategy.id}:`,
-                    error
-                  );
-                  return null;
-                }
-              })
-            );
-            userDeposits = userDeposits.filter(Boolean);
-          } catch (error) {
-            console.error("Error fetching user deposits:", error);
-            toast.error("Failed to fetch user deposits");
-          }
-        }
+        // fetchStrategies already includes user deposits and vault balances
+        console.log("📊 Using data from fetchStrategies (includes user deposits and vault balances)");
+        
+        // Extract user deposits from the strategy data that fetchStrategies already populated
+        const userDeposits = strategiesData
+          .filter(strategy => strategy.userDeposit)
+          .map(strategy => strategy.userDeposit);
 
         if (!mountedRef.current) return; // Vérifier à nouveau avant setState
 
@@ -309,7 +232,7 @@ export default function LendingPage() {
         const poolsData = createPoolsFromStrategies(
           strategiesData,
           userDeposits,
-          poolData
+          null // poolData not needed since fetchStrategies gets vault balances directly
         );
         console.log("🏊 Pools created:", poolsData.length, "pools");
         console.log("🏊 Pools data:", poolsData);
