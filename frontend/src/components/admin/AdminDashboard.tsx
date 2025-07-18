@@ -190,7 +190,7 @@ export function AdminDashboard() {
   // Si pas connecté ou pas admin
   if (!connected || !publicKey) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <Card className="w-96">
           <CardHeader className="text-center">
             <Shield className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -208,7 +208,7 @@ export function AdminDashboard() {
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <Card className="w-96">
           <CardHeader className="text-center">
             <Shield className="w-12 h-12 mx-auto mb-4 text-red-500" />
@@ -228,7 +228,7 @@ export function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background pt-20">
+    <div className="min-h-screen bg-black pt-20">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">

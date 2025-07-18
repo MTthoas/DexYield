@@ -56,7 +56,7 @@ export function HomeSection() {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="px-8 py-4 border-gray-600 text-dark hover:bg-gray-800 hover:text-white transition-all duration-300"
+                  className="px-8 py-4 border-gray-600 text-white hover:bg-gray-800 hover:text-white transition-all duration-300"
                 >
                   Explore Markets
                 </Button>

@@ -203,17 +203,28 @@ export const useLendingSimplified = () => {
 
     try {
       console.log('🚀 Starting withdraw with exact script logic...');
-      console.log('🔍 Strategy address:', strategyAddress);
+      console.log('🔍 Strategy address (raw):', strategyAddress);
       console.log('🔍 Amount:', amount);
 
+      // Convert strategy address to string if it's a PublicKey object
+      const strategyAddressStr = typeof strategyAddress === 'string' 
+        ? strategyAddress 
+        : strategyAddress.toString();
+      
+      console.log('🔍 Strategy address (string):', strategyAddressStr);
+
       // Use the exact strategy address from the script
-      const strategyPubkey = new PublicKey(strategyAddress);
+      const strategyPubkey = new PublicKey(strategyAddressStr);
 
       // Find target strategy to get YT mint like in the script
       const strategies = await contractService.getAllStrategies();
-      const targetStrategy = strategies.find((s: any) => s.publicKey.toBase58() === strategyAddress);
+      console.log('🔍 Available strategies:', strategies.map(s => s.publicKey.toBase58()));
+      
+      const targetStrategy = strategies.find((s: any) => s.publicKey.toBase58() === strategyAddressStr);
       if (!targetStrategy) {
-        throw new Error('Strategy not found');
+        console.error('Strategy not found! Looking for:', strategyAddressStr);
+        console.error('Available strategies:', strategies.map(s => s.publicKey.toBase58()));
+        throw new Error(`Strategy not found: ${strategyAddressStr}`);
       }
 
       // Get user token account

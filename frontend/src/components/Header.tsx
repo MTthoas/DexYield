@@ -155,6 +155,13 @@ export default function Header() {
             Lending
             <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 group-hover:w-full transition-all duration-300"></span>
           </Link>
+          <Link
+            to="/dashboard"
+            className={`text-sm font-medium ${textColorSecondaryClass} ${hoverTextColorClass} transition-colors relative group`}
+          >
+            Dashboard
+            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 group-hover:w-full transition-all duration-300"></span>
+          </Link>
           {isAdmin && (
             <Link
               to="/admin"

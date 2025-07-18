@@ -296,8 +296,8 @@ export const useLending = () => {
           createdAt: account.createdAt?.toNumber(),
           active: account.active,
           totalDeposited: account.totalDeposited?.toNumber() || 0,
-          // Récupère enfin le vrai symbole depuis ta constante
-          tokenSymbol: TOKEN_SYMBOLS[mintStr] || 'UNKNOWN',
+          // Récupère enfin le vrai symbole depuis ta constante avec fallback amélioré
+          tokenSymbol: TOKEN_SYMBOLS[mintStr] || (mintStr?.includes('So1') || mintStr?.includes('111111111111111111111111111111111') ? 'SOL' : 'SOL'),
           // Ajouter les informations de dépôt utilisateur
           userDeposit: userDepositInfo?.exists ? {
             amount: userDepositInfo.data.amount?.toNumber() || 0,
@@ -307,7 +307,9 @@ export const useLending = () => {
           } : null,
           // Ajouter les informations du vault
           vaultBalance: vaultInfo?.balance || 0,
-          vaultPda: vaultInfo?.pda?.toBase58() || null
+          vaultPda: vaultInfo?.pda?.toBase58() || null,
+          // Ajouter le YT mint address depuis les données du contract
+          tokenYieldAddress: account.tokenYieldAddress?.toBase58() || account.token_yield_address?.toBase58() || null
         };
       }));
       
