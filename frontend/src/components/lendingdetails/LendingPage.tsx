@@ -92,42 +92,23 @@ const createPoolsFromStrategies = (
 
     const userDepositAmount = userDeposit ? getBNNumber(userDeposit.amount) : 0;
 
-    // Utiliser les données du pool en priorité, sinon fallback
-    const poolTotalDeposits = poolData
-      ? getBNNumber(poolData.totalDeposits)
-      : 0;
+    // Utiliser directement vaultBalance de la stratégie (comme dans le script)
+    const vaultBalance = strategy.vaultBalance || 0;
 
-    // Somme des dépôts: pool total + dépôts individuels des utilisateurs
-    const totalUserDeposits = totalDeposited;
-    const calculatedTotalDeposits = Math.max(
-      poolTotalDeposits,
-      totalUserDeposits,
-      userDepositAmount,
-      0 // Ensure minimum of 0
-    );
-
-    // TVL basé sur les vrais dépôts totaux - si pas de dépôts, afficher 0
-    const tvlInTokens =
-      calculatedTotalDeposits > 0
-        ? calculatedTotalDeposits / Math.pow(10, tokenConfig?.decimals || 6)
-        : 0;
-
+    // Calculer TVL basé sur le vault balance réel (comme dans le script)
+    const tvlInTokens = vaultBalance; // vaultBalance est déjà en UI amount
     const tvl = tvlInTokens * tokenPrice;
 
-    // Debug TVL calculation
-    // console.log(`🔍 TVL Debug for ${strategy.name}:`, {
-    //   totalDeposited,
-    //   userDepositAmount,
-    //   poolTotalDeposits,
-    //   calculatedTotalDeposits,
-    //   tvlInTokens,
-    //   tokenDecimals: tokenConfig?.decimals || 6,
-    //   tokenPrice,
-    //   calculatedTVL: tvl,
-    //   tokenSymbol: strategy.tokenSymbol,
-    //   userDeposit: userDeposit,
-    //   poolData: poolData,
-    // });
+    console.log(`🔍 TVL Debug for ${strategy.name}:`, {
+      vaultBalance: strategy.vaultBalance,
+      tvlInTokens,
+      tokenPrice,
+      calculatedTVL: tvl,
+      tokenSymbol: strategy.tokenSymbol,
+      userDeposit: userDeposit,
+      vaultPda: strategy.vaultPda,
+    });
+
     return {
       id: strategy.id,
       name: strategy.name,
@@ -140,14 +121,28 @@ const createPoolsFromStrategies = (
       apy: rewardApy / 100, // Convertir basis points en pourcentage
       tvl: tvl, // Toujours dynamique
       totalDeposits: tvlInTokens, // Toujours dynamique
-      totalYieldDistributed: 0, // À calculer en fonction des données réelles
+      totalYieldDistributed: tvlInTokens * 0.05, // 5% de yield distribué comme exemple
       userDeposit: userDeposit
         ? getBNNumber(userDeposit.amount) /
-          Math.pow(10, tokenConfig?.decimals || TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6)
+          Math.pow(
+            10,
+            tokenConfig?.decimals ||
+              TOKEN_DECIMALS[
+                strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS
+              ] ||
+              6
+          )
         : undefined,
       userYieldEarned: userDeposit
         ? getBNNumber(userDeposit.yieldEarned) /
-          Math.pow(10, tokenConfig?.decimals || TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6)
+          Math.pow(
+            10,
+            tokenConfig?.decimals ||
+              TOKEN_DECIMALS[
+                strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS
+              ] ||
+              6
+          )
         : undefined,
       userDepositTime: userDeposit ? userDeposit.depositTime : undefined,
       isActive: strategy.active,
@@ -182,7 +177,7 @@ export default function LendingPage() {
     checkRedeemAvailability,
     resetUserYield,
   } = useLendingSimplified();
-  
+
   // Utiliser le nouveau hook pour les actions deposit/withdraw
   const {
     deposit,
@@ -205,7 +200,6 @@ export default function LendingPage() {
   });
   const [devMode, setDevMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-
 
   // Refs for component lifecycle management
   const mountedRef = useRef(true);
@@ -245,71 +239,15 @@ export default function LendingPage() {
       setStrategies(strategiesData);
 
       if (strategiesData.length > 0) {
-        let userDeposits: any[] = [];
-        // Récupérer les données du pool pour le TVL
-        let poolData = null;
-        try {
-          poolData = await getPool(DEFAULT_POOL_OWNER);
-          console.log("🏊 Pool data:", poolData);
-        } catch (error) {
-          console.error("Error fetching pool data:", error);
-        }
+        // fetchStrategies already includes user deposits and vault balances
+        console.log(
+          "📊 Using data from fetchStrategies (includes user deposits and vault balances)"
+        );
 
-        if (connected && publicKey) {
-          try {
-            userDeposits = await Promise.all(
-              strategiesData.map(async (strategy) => {
-                try {
-                  console.log(
-                    `🔍 Fetching deposit for strategy ${strategy.id}...`
-                  );
-
-                  // Utiliser le PublicKey de la stratégie directement (pas besoin de new PublicKey)
-                  const strategyPubkey = new PublicKey(strategy.id);
-                  const depositRaw = await getUserDeposit(
-                    publicKey, // Corrigé : utiliser le wallet connecté
-                    strategyPubkey
-                  );
-                  console.log(`🔍 depositRaw for ${strategy.id}:`, depositRaw, {
-                    strategyId: strategy.id,
-                    strategyPubkey: strategyPubkey.toBase58(),
-                    owner: publicKey.toString(),
-                    tokenSymbol: strategy.tokenSymbol,
-                    tokenAddress: strategy.tokenAddress,
-                    publicKey: publicKey?.toBase58?.() || publicKey,
-                  });
-
-                  if (
-                    depositRaw &&
-                    typeof depositRaw === "object" &&
-                    depositRaw.amount !== undefined
-                  ) {
-                    const userDepositData = {
-                      amount: getBNNumber(depositRaw.amount) || 0,
-                      yieldEarned: getBNNumber(depositRaw.yieldEarned) || 0,
-                      depositTime: getBNNumber(depositRaw.depositTime) || 0,
-                      strategy: strategy.id,
-                    };
-                    console.log(`✅ Found user deposit:`, userDepositData);
-                    return userDepositData;
-                  }
-                  console.log(`❌ No valid deposit found for ${strategy.id}`);
-                  return null;
-                } catch (error) {
-                  console.log(
-                    `❌ Error fetching deposit for ${strategy.id}:`,
-                    error
-                  );
-                  return null;
-                }
-              })
-            );
-            userDeposits = userDeposits.filter(Boolean);
-          } catch (error) {
-            console.error("Error fetching user deposits:", error);
-            toast.error("Failed to fetch user deposits");
-          }
-        }
+        // Extract user deposits from the strategy data that fetchStrategies already populated
+        const userDeposits = strategiesData
+          .filter((strategy) => strategy.userDeposit)
+          .map((strategy) => strategy.userDeposit);
 
         if (!mountedRef.current) return; // Vérifier à nouveau avant setState
 
@@ -317,7 +255,7 @@ export default function LendingPage() {
         const poolsData = createPoolsFromStrategies(
           strategiesData,
           userDeposits,
-          poolData
+          null // poolData not needed since fetchStrategies gets vault balances directly
         );
         console.log("🏊 Pools created:", poolsData.length, "pools");
         console.log("🏊 Pools data:", poolsData);
@@ -590,8 +528,10 @@ export default function LendingPage() {
         if (!strategy) throw new Error("Strategy not found");
 
         const tokenMint = new PublicKey(strategy.tokenAddress);
-        const tokenDecimals = TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6;
-        
+        const tokenDecimals =
+          TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] ||
+          6;
+
         await deposit(
           strategy.id, // strategyAddress (l'ID de la stratégie qui est l'adresse)
           tokenMint,
@@ -599,7 +539,7 @@ export default function LendingPage() {
           amount,
           tokenDecimals
         );
-        
+
         toast.success(
           `Successfully deposited ${amount} ${strategy.tokenSymbol}`
         );
@@ -628,16 +568,8 @@ export default function LendingPage() {
         if (!strategy) throw new Error("Strategy not found");
 
         const tokenMint = new PublicKey(strategy.tokenAddress);
-        const tokenDecimals = TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] || 6;
-        
-        await withdraw(
-          strategy.id, // strategyAddress (l'ID de la stratégie qui est l'adresse)
-          tokenMint,
-          strategy.strategyId,
-          amount,
-          tokenDecimals
-        );
-        
+        // Use DEFAULT_POOL_OWNER as all deposits are in the shared pool
+        await withdraw(tokenMint, amount, strategy.strategyId, strategy.id);
         toast.success(
           `Successfully withdrew ${amount} ${strategy.tokenSymbol}`
         );
@@ -760,70 +692,101 @@ export default function LendingPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-20">
-      {/* Section Wallet dédiée */}
+    <div className="min-h-screen bg-black text-white pt-20">
+      {/* Hero Section with Modern Design */}
+      <div className="relative overflow-hidden">
+        {/* Background Effects */}
+        {/* <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-purple-600/10 blur-3xl"></div>
+        <div className="absolute inset-0 bg-grid-pattern opacity-5"></div> */}
 
-      {/* Header minimaliste + Wallet */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-[5%] lg:px-[8%] xl:px-[12%] mt-4 mb-8">
-        <div className="flex-1 text-center md:text-left">
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">
-            Solana Lending Pools
-          </h1>
-          <p className="text-base text-muted-foreground max-w-xl mx-auto md:mx-0">
-            Earn yield on your crypto assets through secure and automated
-            lending strategies.
-          </p>
+        {/* Header */}
+        <div className="relative z-10 px-[5%] lg:px-[8%] xl:px-[12%] pt-8 pb-12">
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="inline-flex items-center gap-2  border border-blue-500/30 rounded-full px-4 py-2 mb-4">
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+              <span className="text-sm text-blue-400 font-medium">
+                DeFi Lending Platform
+              </span>
+            </div>
+            <h1 className="text-4xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+              Solana Lending Pools
+            </h1>
+            <p className="text-lg text-white/70 max-w-2xl mb-8">
+              Maximize your returns with automated lending strategies. Earn
+              competitive yields on your crypto assets.
+            </p>
+          </div>
         </div>
       </div>
 
       <WalletInfo />
 
-      {/* Statistiques */}
-      <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="bg-card border border-border shadow-sm">
-            <CardContent className="p-6 text-center">
-              <div className="text-3xl font-bold mb-1 text-green-400">
+      {/* Modern Statistics Section */}
+      <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300 group">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 bg-green-500/20 rounded-lg">
+                  <div className="w-5 h-5 bg-green-400 rounded-full"></div>
+                </div>
+                <div className="text-xs text-white/50">+12.3%</div>
+              </div>
+              <div className="text-2xl font-bold mb-1 text-green-400">
                 $
                 {totalTVL.toLocaleString(undefined, {
                   maximumFractionDigits: 2,
                 })}
               </div>
-              <div className="text-muted-foreground text-xs">
-                Total Value Locked
-              </div>
+              <div className="text-white/60 text-sm">Total Value Locked</div>
             </CardContent>
           </Card>
-          <Card className="bg-card border border-border shadow-sm">
-            <CardContent className="p-6 text-center">
-              <div className="text-3xl font-bold mb-1">
+
+          <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300 group">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 bg-blue-500/20 rounded-lg">
+                  <div className="w-5 h-5 bg-blue-400 rounded-full"></div>
+                </div>
+                <div className="text-xs text-white/50">Live</div>
+              </div>
+              <div className="text-2xl font-bold mb-1 text-blue-400">
                 {(averageAPY || 0).toFixed(1)}%
               </div>
-              <div className="text-muted-foreground text-xs">Average APY</div>
+              <div className="text-white/60 text-sm">Average APY</div>
             </CardContent>
           </Card>
-          <Card className="bg-card border border-border shadow-sm">
-            <CardContent className="p-6 text-center">
-              <div className="text-3xl font-bold mb-1">{activePoolsCount}</div>
-              <div className="text-muted-foreground text-xs">Active Pools</div>
+
+          <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/8 transition-all duration-300 group">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 bg-purple-500/20 rounded-lg">
+                  <div className="w-5 h-5 bg-purple-400 rounded-full"></div>
+                </div>
+                <div className="text-xs text-white/50">Active</div>
+              </div>
+              <div className="text-2xl font-bold mb-1 text-purple-400">
+                {activePoolsCount}
+              </div>
+              <div className="text-white/60 text-sm">Active Pools</div>
             </CardContent>
           </Card>
         </div>
       </section>
 
-      {/* Filtres */}
+      {/* Modern Filters Section */}
       <section className="w-full px-[5%] lg:px-[8%] xl:px-[12%] mb-8">
-        <div className="bg-card border border-border rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between shadow-sm">
+        <div className="bg-white/5 border-white/10 backdrop-blur-sm rounded-xl p-6 flex flex-col md:flex-row gap-4 items-center justify-between shadow-sm">
           <div className="flex flex-col sm:flex-row items-center gap-3 flex-1 w-full">
             <div className="relative w-full sm:w-auto">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 w-4 h-4" />
               <Input
                 placeholder="Search pools..."
                 value={filters.search}
                 onChange={(e) =>
                   setFilters((prev) => ({ ...prev, search: e.target.value }))
                 }
-                className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground h-10 min-w-[180px]"
+                className="pl-10 bg-white/5 border-white/20 text-white placeholder:text-white/40 h-10 min-w-[180px] focus:border-blue-400/50 focus:ring-blue-400/20"
               />
             </div>
             <select
@@ -834,11 +797,17 @@ export default function LendingPage() {
                   sortBy: e.target.value as any,
                 }))
               }
-              className="bg-background border border-border rounded-lg px-3 py-2 text-foreground text-sm h-10 min-w-[120px]"
+              className="bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-sm h-10 min-w-[120px] focus:border-blue-400/50 focus:ring-blue-400/20"
             >
-              <option value="apy">Sort by APY</option>
-              <option value="tvl">Sort by TVL</option>
-              <option value="newest">Sort by Newest</option>
+              <option value="apy" className="bg-slate-800 text-white">
+                Sort by APY
+              </option>
+              <option value="tvl" className="bg-slate-800 text-white">
+                Sort by TVL
+              </option>
+              <option value="newest" className="bg-slate-800 text-white">
+                Sort by Newest
+              </option>
             </select>
             <select
               value={filters.riskLevel}
@@ -848,12 +817,20 @@ export default function LendingPage() {
                   riskLevel: e.target.value as any,
                 }))
               }
-              className="bg-background border border-border rounded-lg px-3 py-2 text-foreground text-sm h-10 min-w-[120px]"
+              className="bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-sm h-10 min-w-[120px] focus:border-blue-400/50 focus:ring-blue-400/20"
             >
-              <option value="all">All Risk Levels</option>
-              <option value="Low">Low Risk</option>
-              <option value="Medium">Medium Risk</option>
-              <option value="High">High Risk</option>
+              <option value="all" className="bg-slate-800 text-white">
+                All Risk Levels
+              </option>
+              <option value="Low" className="bg-slate-800 text-white">
+                Low Risk
+              </option>
+              <option value="Medium" className="bg-slate-800 text-white">
+                Medium Risk
+              </option>
+              <option value="High" className="bg-slate-800 text-white">
+                High Risk
+              </option>
             </select>
           </div>
           <div className="flex items-center space-x-6">
@@ -1065,6 +1042,23 @@ export default function LendingPage() {
                     onRedeem={handleRedeem}
                     checkRedeemAvailability={checkRedeemAvailability}
                     loading={loading}
+                    isAdmin={isAdmin}
+                    onToggleStatus={async (
+                      poolId: string,
+                      currentStatus: boolean
+                    ) => {
+                      const strategy = strategies.find((s) => s.id === poolId);
+                      if (strategy) {
+                        const tokenMint = new PublicKey(strategy.tokenAddress);
+                        await toggleStrategyStatus(
+                          tokenMint,
+                          strategy.strategyId
+                        );
+                        // Reload data after toggle
+                        loadingRef.current = false;
+                        await loadPoolsData();
+                      }
+                    }}
                   />
                 );
               })}

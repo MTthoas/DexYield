@@ -50,42 +50,55 @@ export function WalletInfo() {
 
       for (const strategy of strategiesData) {
         try {
-          // Récupérer les données de dépôt utilisateur
+          console.log(`🔍 Checking strategy ${strategy.id} for yield tokens...`);
+          
+          // Récupérer les données de dépôt utilisateur avec la signature correcte
           const userDeposit = await getUserDeposit(
-            DEFAULT_POOL_OWNER,
+            publicKey,
             new PublicKey(strategy.id)
           );
 
-          if (userDeposit && userDeposit.yieldEarned > 0) {
-            // Construire les comptes pour récupérer le YT mint
-            const accounts = await contractService.buildLendingAccounts(
-              publicKey,
-              DEFAULT_POOL_OWNER,
-              new PublicKey(strategy.tokenAddress),
-              DEFAULT_POOL_OWNER, // admin
-              strategy.strategyId // or strategy.id if that's the correct field
-            );
+          console.log(`💰 User deposit for strategy ${strategy.id}:`, userDeposit);
 
-            // Récupérer le solde YT
-            const ytBalance = await getUserTokenBalance(accounts.ytMintPDA);
-            const ytBalanceNum =
-              ytBalance &&
-              typeof ytBalance === "object" &&
-              "balance" in ytBalance
+          // Vérifier si l'utilisateur a un dépôt (pas besoin de yieldEarned > 0)
+          if (userDeposit && userDeposit.amount > 0) {
+            // Récupérer le YT mint directement depuis la stratégie 
+            const ytMintAddress = strategy.tokenYieldAddress;
+            
+            if (ytMintAddress) {
+              console.log(`🎯 YT mint found for strategy ${strategy.id}:`, ytMintAddress);
+              
+              // Récupérer le solde YT de l'utilisateur
+              const ytMint = new PublicKey(ytMintAddress);
+              const ytBalance = await getUserTokenBalance(ytMint);
+              
+              console.log(`📊 YT balance for ${strategy.id}:`, ytBalance);
+              
+              const ytBalanceNum = ytBalance && ytBalance.balance 
                 ? Number(ytBalance.balance) / Math.pow(10, 6) // Assume 6 decimals for YT
                 : 0;
 
-            if (ytBalanceNum > 0) {
-              yieldTokensData.push({
-                mint: accounts.ytMintPDA.toString(),
-                symbol: `YT-${strategy.tokenSymbol}`,
-                icon: `/images/tokens/yt-${strategy.tokenSymbol?.toLowerCase()}.png`,
-                amount: ytBalanceNum,
-                yieldEarned: userDeposit.yieldEarned / Math.pow(10, 6), // Convert from raw amount
-                strategy: strategy.name,
-                decimals: 6,
-              });
+              console.log(`🔢 YT balance converted: ${ytBalanceNum}`);
+
+              if (ytBalanceNum > 0) {
+                yieldTokensData.push({
+                  mint: ytMintAddress,
+                  symbol: `YT-${strategy.tokenSymbol}`,
+                  icon: `/images/tokens/yt-${strategy.tokenSymbol?.toLowerCase()}.png`,
+                  amount: ytBalanceNum,
+                  yieldEarned: userDeposit.yieldEarned ? Number(userDeposit.yieldEarned) / Math.pow(10, 6) : 0,
+                  strategy: strategy.name,
+                  decimals: 6,
+                });
+                console.log(`✅ Added yield token for strategy ${strategy.id}`);
+              } else {
+                console.log(`❌ No YT balance for strategy ${strategy.id}`);
+              }
+            } else {
+              console.log(`❌ No YT mint found for strategy ${strategy.id}`);
             }
+          } else {
+            console.log(`❌ No user deposit for strategy ${strategy.id}`);
           }
         } catch (error) {
           console.log(`Error fetching YT for strategy ${strategy.id}:`, error);
@@ -124,39 +137,55 @@ export function WalletInfo() {
             "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
           ),
         });
+        // Liste des tokens du projet à afficher
+        const projectTokens = [
+          "So11111111111111111111111111111111111111112", // SOL
+          "Es9vMFrzaCERbZ6t2kF9Q6U6TzQbY4xXHzkwgZ4k6A9E", // USDC mainnet
+          "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", // USDC devnet
+          // Ajouter d'autres tokens du projet si nécessaire
+        ];
+
         const tokens = resp.value
           .map((acc) => {
             const info = acc.account.data.parsed.info;
             const mint = info.mint;
             const amount = parseFloat(info.tokenAmount.uiAmountString || "0");
             const decimals = info.tokenAmount.decimals;
+            
             // Icône et nom dynamique : USDC, USDT, SOL liens PNG fournis, autres TrustWallet
             let icon = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/assets/${mint}/logo.png`;
             let symbol = mint.slice(0, 4) + "...";
+            let isProjectToken = projectTokens.includes(mint);
+            
             if (mint === "So11111111111111111111111111111111111111112") {
               icon =
                 "https://pngate.com/wp-content/uploads/2025/07/solana-sol-app-logo-icon-gradient-crypto-symbol-rounded-black-background-1.png";
               symbol = "SOL";
+              isProjectToken = true;
             }
             if (mint === "Es9vMFrzaCERbZ6t2kF9Q6U6TzQbY4xXHzkwgZ4k6A9E") {
               icon =
                 "https://png.pngtree.com/png-vector/20220709/ourmid/pngtree-usd-coin-usdc-digital-stablecoin-icon-technology-pay-web-vector-png-image_37843734.png";
               symbol = "USDC";
+              isProjectToken = true;
             }
             if (mint === "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU") {
               icon =
                 "https://png.pngtree.com/png-vector/20220709/ourmid/pngtree-usd-coin-usdc-digital-stablecoin-icon-technology-pay-web-vector-png-image_37843734.png";
               symbol = "USDC";
+              isProjectToken = true;
             }
+            
             return {
               mint,
               symbol,
               icon,
               amount,
               decimals,
+              isProjectToken,
             };
           })
-          .filter((t) => t.amount > 0);
+          .filter((t) => t.amount > 0 && t.isProjectToken); // Filtrer pour ne montrer que les tokens du projet
         setSplTokens(tokens);
 
         // Fetch yield tokens après avoir chargé les SPL tokens

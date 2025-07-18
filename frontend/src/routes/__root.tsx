@@ -8,7 +8,7 @@ import { WalletContextProvider } from "../contexts/WalletContext";
 export const Route = createRootRoute({
   component: () => (
     <WalletContextProvider>
-      <div className="min-h-screen w-full overflow-x-hidden">
+      <div className="min-h-screen w-full overflow-x-hidden bg-black">
         <Header />
         <Outlet />
         <TanStackRouterDevtools />

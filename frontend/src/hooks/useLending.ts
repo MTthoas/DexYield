@@ -44,13 +44,13 @@ export const useLending = () => {
 
   // Deposit tokens
   const deposit = useCallback(async (
-    poolOwner: PublicKey,
     strategy: PublicKey,
     amount: number,
     userTokenAccount: PublicKey,
     userYtAccount: PublicKey,
     vaultAccount: PublicKey,
-    ytMint: PublicKey
+    ytMint: PublicKey,
+    tokenMint: PublicKey
   ) => {
     if (!contractService || !publicKey) return;
 
@@ -60,13 +60,13 @@ export const useLending = () => {
     try {
       const txId = await contractService.deposit(
         publicKey,
-        poolOwner,
         strategy,
         amount,
         userTokenAccount,
         userYtAccount,
         vaultAccount,
-        ytMint
+        ytMint,
+        tokenMint
       );
       console.log('Deposit successful:', txId);
       return txId;
@@ -81,7 +81,6 @@ export const useLending = () => {
 
   // Withdraw tokens
   const withdraw = useCallback(async (
-    poolOwner: PublicKey,
     strategy: PublicKey,
     amount: number,
     userTokenAccount: PublicKey,
@@ -97,7 +96,6 @@ export const useLending = () => {
     try {
       const txId = await contractService.withdraw(
         publicKey,
-        poolOwner,
         strategy,
         amount,
         userTokenAccount,
@@ -186,26 +184,30 @@ export const useLending = () => {
     }
   }, [contractService, publicKey]);
 
-  // Get user deposit data
+  // Get user deposit data - simplified version that matches script logic
   const getUserDeposit = useCallback(async (
-    poolOwner: PublicKey,
+    user: PublicKey,
     strategy: PublicKey
   ) => {
-    if (!contractService || !publicKey) return { amount: 0, yieldEarned: 0, strategy };
+    if (!contractService || !user) return { amount: 0, yieldEarned: 0, strategy };
 
     try {
-      const [poolPDA] = findLendingPoolPDA(poolOwner);
-      const depositData = await contractService.getUserDeposit(publicKey, poolPDA, strategy);
-      return depositData;
-    } catch (err) {
-      // Si le compte n'existe pas, retourne un dépôt vide
-      if (err?.message?.includes('Account does not exist')) {
-        return { amount: 0, yieldEarned: 0, strategy };
+      // Use the simplified method that matches script logic
+      const depositData = await contractService.getUserDepositSimplified(user, strategy);
+      if (depositData.exists) {
+        return {
+          amount: depositData.data.amount,
+          yieldEarned: depositData.data.yieldEarned,
+          depositTime: depositData.data.depositTime,
+          strategy: strategy.toBase58()
+        };
       }
+      return { amount: 0, yieldEarned: 0, strategy: strategy.toBase58() };
+    } catch (err) {
       console.error('Error fetching user deposit:', err);
-      return { amount: 0, yieldEarned: 0, strategy };
+      return { amount: 0, yieldEarned: 0, strategy: strategy.toBase58() };
     }
-  }, [contractService, publicKey]);
+  }, [contractService]);
 
   // Get strategy data
   const getStrategy = useCallback(async (tokenAddress: PublicKey) => {
@@ -233,7 +235,7 @@ export const useLending = () => {
     }
   }, [contractService]);
 
-  // Fetch all strategies
+  // Fetch all strategies with user deposits
   const fetchStrategies = useCallback(async () => {
     console.log("fetchStrategies called");
     console.log("contractService:", contractService);
@@ -253,13 +255,40 @@ export const useLending = () => {
     try {
       // Utilisation de la méthode publique du service
       const strategiesRaw = await contractService.getAllStrategies();
-      // Correction : mapping Anchor
-      const allStrategies = strategiesRaw.map((s: any) => {
+      
+      // Correction : mapping Anchor avec récupération des dépôts utilisateur et soldes des vaults
+      const allStrategies = await Promise.all(strategiesRaw.map(async (s: any) => {
         const account = s.account || {};
         const mintStr = account.tokenAddress?.toBase58();
+        const strategyPubkey = s.publicKey;
+        const strategyId = account.strategyId?.toNumber() || 0;
+        const tokenAddress = account.tokenAddress;
+        
+        // Récupérer le dépôt utilisateur pour cette stratégie si connecté
+        let userDepositInfo = null;
+        if (publicKey && contractService.getUserDepositSimplified) {
+          try {
+            userDepositInfo = await contractService.getUserDepositSimplified(publicKey, strategyPubkey);
+            console.log(`User deposit for strategy ${strategyPubkey.toBase58()}:`, userDepositInfo);
+          } catch (err) {
+            console.log(`No user deposit found for strategy ${strategyPubkey.toBase58()}`);
+          }
+        }
+        
+        // Récupérer le solde du vault comme dans le script
+        let vaultInfo = null;
+        if (contractService.getVaultBalance && tokenAddress && strategyId) {
+          try {
+            vaultInfo = await contractService.getVaultBalance(tokenAddress, strategyId);
+            console.log(`Vault balance for strategy ${strategyPubkey.toBase58()}:`, vaultInfo);
+          } catch (err) {
+            console.log(`Failed to get vault balance for strategy ${strategyPubkey.toBase58()}`);
+          }
+        }
+        
         return {
           id: s.publicKey?.toBase58(),
-          strategyId: account.strategyId?.toNumber() || 0,
+          strategyId,
           tokenAddress: mintStr,
           rewardApy: account.rewardApy?.toNumber(),
           name: account.name,
@@ -267,11 +296,38 @@ export const useLending = () => {
           createdAt: account.createdAt?.toNumber(),
           active: account.active,
           totalDeposited: account.totalDeposited?.toNumber() || 0,
-          // Récupère enfin le vrai symbole depuis ta constante
-          tokenSymbol: TOKEN_SYMBOLS[mintStr] || 'UNKNOWN',
+          // Récupère enfin le vrai symbole depuis ta constante avec fallback amélioré
+          tokenSymbol: TOKEN_SYMBOLS[mintStr] || (mintStr?.includes('So1') || mintStr?.includes('111111111111111111111111111111111') ? 'SOL' : 'SOL'),
+          // Ajouter les informations de dépôt utilisateur
+          userDeposit: userDepositInfo?.exists ? {
+            amount: userDepositInfo.data.amount?.toNumber() || 0,
+            yieldEarned: userDepositInfo.data.yieldEarned?.toNumber() || 0,
+            depositTime: userDepositInfo.data.depositTime?.toNumber() || 0,
+            strategy: s.publicKey?.toBase58()
+          } : null,
+          // Ajouter les informations du vault
+          vaultBalance: vaultInfo?.balance || 0,
+          vaultPda: vaultInfo?.pda?.toBase58() || null,
+          // Ajouter le YT mint address depuis les données du contract
+          tokenYieldAddress: account.tokenYieldAddress?.toBase58() || account.token_yield_address?.toBase58() || null
         };
+      }));
+      
+      console.log("Fetched strategies from contract with user deposits and vault balances:", allStrategies);
+      
+      // Log detailed information for debugging
+      allStrategies.forEach((strategy, index) => {
+        console.log(`Strategy ${index + 1}:`, {
+          id: strategy.id,
+          name: strategy.name,
+          tokenSymbol: strategy.tokenSymbol,
+          strategyId: strategy.strategyId,
+          vaultBalance: strategy.vaultBalance,
+          userDeposit: strategy.userDeposit,
+          active: strategy.active
+        });
       });
-      console.log("Fetched strategies from contract (Anchor mapping):", allStrategies);
+      
       setStrategies(allStrategies);
       setError(null);
       return allStrategies;
@@ -282,7 +338,7 @@ export const useLending = () => {
     } finally {
       setLoading(false);
     }
-  }, [contractService]);
+  }, [contractService, publicKey]);
 
   // Get user token balance
   const getUserTokenBalance = useCallback(async (tokenMint: PublicKey) => {

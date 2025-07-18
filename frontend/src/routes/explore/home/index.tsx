@@ -4,48 +4,15 @@ import { HowItWorksSection } from "@/components/lendingsections/HowItWorksSectio
 import { FAQSection } from "@/components/lendingsections/FAQSection";
 import { ActionSection } from "@/components/lendingsections/ActionSection";
 import { createFileRoute } from "@tanstack/react-router";
-import { isMockMode } from "@/mock/index";
-import { useMock } from "@/mock/context";
-import { MockBadge } from "@/components/ui/MockBadge";
 
 export const Route = createFileRoute("/explore/home/")({
   component: HomePage,
 });
 
 export default function HomePage() {
-  if (isMockMode()) {
-    return <MockHomePage />;
-  }
-
   return (
-    <main className="flex min-h-screen flex-col pt-16">{/* pt-16 pour compenser le header fixed */}
-      <HomeSection />
-      <FeaturesSection />
-      <HowItWorksSection />
-      <FAQSection />
-      <ActionSection />
-    </main>
-  );
-}
-
-function MockHomePage() {
-  const { globalStats, notifications } = useMock();
-
-  return (
-    <main className="flex min-h-screen flex-col pt-16">{/* pt-16 pour compenser le header fixed */}
-      {/* Mock Badge */}
-      <MockBadge />
-      
-      {/* Notification banner for mock mode */}
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 text-center">
-        <p className="text-sm">
-          🚀 <strong>MODE MOCK ACTIVÉ</strong> - Données de démonstration | 
-          TVL: ${globalStats.totalValueLocked.toLocaleString()} | 
-          Utilisateurs: {globalStats.totalUsers.toLocaleString()} | 
-          Rendement moyen: {globalStats.averageApy}%
-        </p>
-      </div>
-
+    <main className="flex min-h-screen flex-col pt-16 bg-black">
+      {/* pt-16 pour compenser le header fixed */}
       <HomeSection />
       <FeaturesSection />
       <HowItWorksSection />

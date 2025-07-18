@@ -348,44 +348,47 @@ export class ContractService {
 
   async deposit(
     user: PublicKey,
-    poolOwner: PublicKey,
     strategy: PublicKey,
     amount: number,
     userTokenAccount: PublicKey,
     userYtAccount: PublicKey,
     vaultAccount: PublicKey,
-    ytMint: PublicKey
+    ytMint: PublicKey,
+    tokenMint: PublicKey
   ) {
     if (!this.lendingProgram) {
       throw new Error("Lending program not initialized");
     }
 
-    const [poolPDA] = findLendingPoolPDA(poolOwner);
-    const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategy);
-    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
-
-    // Note: YT token account should be created by the client before calling deposit
+    // Use the same PDA derivation as the working script
+    const [userDepositPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("user_deposit"),
+        user.toBuffer(),
+        strategy.toBuffer(),
+      ],
+      LENDING_PROGRAM_ID
+    );
 
     return await this.lendingProgram.methods
       .deposit(new BN(amount))
       .accounts({
         user,
-        pool: poolPDA,
         userDeposit: userDepositPDA,
         strategy,
         userTokenAccount,
         userYtAccount,
+        tokenMint,
         vaultAccount,
         ytMint,
-        poolAuthority: poolAuthorityPDA,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: web3.SystemProgram.programId,
       })
       .rpc();
   }
 
   async withdraw(
     user: PublicKey,
-    poolOwner: PublicKey,
     strategy: PublicKey,
     amount: number,
     userTokenAccount: PublicKey,
@@ -397,22 +400,26 @@ export class ContractService {
       throw new Error("Lending program not initialized");
     }
 
-    const [poolPDA] = findLendingPoolPDA(poolOwner);
-    const [userDepositPDA] = findUserDepositPDA(user, poolPDA, strategy);
-    const [poolAuthorityPDA] = findPoolAuthorityPDA(poolOwner);
+    // Use the same PDA derivation as the working script
+    const [userDepositPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("user_deposit"),
+        user.toBuffer(),
+        strategy.toBuffer(),
+      ],
+      LENDING_PROGRAM_ID
+    );
 
     return await this.lendingProgram.methods
       .withdraw(new BN(amount))
       .accounts({
         user,
-        pool: poolPDA,
         userDeposit: userDepositPDA,
         strategy,
         userTokenAccount,
         userYtAccount,
         vaultAccount,
         ytMint,
-        poolAuthority: poolAuthorityPDA,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .rpc();
@@ -637,6 +644,73 @@ export class ContractService {
     return await (this.lendingProgram as any).account.userDeposit.fetch(
       userDepositPDA
     );
+  }
+
+  // New method to get user deposit using script logic (simplified)
+  async getUserDepositSimplified(user: PublicKey, strategy: PublicKey) {
+    if (!this.lendingProgram) {
+      throw new Error("Lending program not initialized");
+    }
+    
+    const [userDepositPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("user_deposit"),
+        user.toBuffer(),
+        strategy.toBuffer(),
+      ],
+      LENDING_PROGRAM_ID
+    );
+    
+    try {
+      const userDeposit = await (this.lendingProgram as any).account.userDeposit.fetch(userDepositPDA);
+      return {
+        pda: userDepositPDA,
+        data: userDeposit,
+        exists: true
+      };
+    } catch (error) {
+      return {
+        pda: userDepositPDA,
+        data: null,
+        exists: false
+      };
+    }
+  }
+
+  // Get vault balance like in the script
+  async getVaultBalance(tokenAddress: PublicKey, strategyId: number) {
+    if (!this.lendingProgram) {
+      throw new Error("Lending program not initialized");
+    }
+    
+    try {
+      // Derive vault PDA like in the script
+      const strategyIdBuffer = Buffer.alloc(8);
+      strategyIdBuffer.writeBigUInt64LE(BigInt(strategyId), 0);
+      
+      const [vaultPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("vault_account"),
+          tokenAddress.toBuffer(),
+          strategyIdBuffer,
+        ],
+        LENDING_PROGRAM_ID
+      );
+      
+      // Get token account balance
+      const vaultAccount = await this.lendingProgram.provider.connection.getTokenAccountBalance(vaultPda);
+      return {
+        pda: vaultPda,
+        balance: vaultAccount.value.uiAmount || 0,
+        exists: true
+      };
+    } catch (error) {
+      return {
+        pda: null,
+        balance: 0,
+        exists: false
+      };
+    }
   }
 
   async getStrategy(

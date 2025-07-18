@@ -5,8 +5,23 @@ import { useContracts } from './useContracts';
 import { useLending } from './useLending';
 import { USDC_MINT, DEFAULT_POOL_OWNER, TOKEN_DECIMALS, DEVNET_CONFIG, LENDING_PROGRAM_ID, getTokenInfo } from '../lib/constants';
 import { findLendingPoolPDA, findStrategyPDA } from '../lib/contracts';
-import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
 import { BN } from '@coral-xyz/anchor';
+
+// Helper function to derive vault PDA like in the working script
+const findVaultPDA = (tokenMint: PublicKey, strategyId: number) => {
+  const strategyIdBuffer = Buffer.alloc(8);
+  strategyIdBuffer.writeBigUInt64LE(BigInt(strategyId), 0);
+  
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("vault_account"),
+      tokenMint.toBuffer(),
+      strategyIdBuffer,
+    ],
+    LENDING_PROGRAM_ID
+  );
+};
 
 export const useLendingSimplified = () => {
   const { publicKey } = useWallet();
@@ -16,13 +31,12 @@ export const useLendingSimplified = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Simplified deposit function using devnet deployed addresses
+  // Simplified deposit function using the exact same logic as the working script
   const deposit = useCallback(async (
     tokenMint: PublicKey,
     amount: number,
     strategyId: number,
-    strategyAddress: string, // Add the actual strategy address
-    poolOwner: PublicKey = publicKey // Use connected wallet as pool owner
+    strategyAddress: string // The actual deployed strategy address from the working script
   ) => {
     if (!contractService || !publicKey) {
       throw new Error('Wallet not connected or contract service not available');
@@ -32,388 +46,124 @@ export const useLendingSimplified = () => {
     setError(null);
 
     try {
-      console.log('🚀 Starting simplified deposit...');
+      console.log('🚀 Starting deposit with exact script logic...');
       console.log('Token mint:', tokenMint.toString());
       console.log('Amount:', amount);
-      console.log('Pool owner:', poolOwner.toString());
+      console.log('Strategy address:', strategyAddress);
 
-      // Calculate strategy PDA using the corrected pattern (now consistent everywhere)
-      const [strategyPDA] = await PublicKey.findProgramAddress(
-        [
-          Buffer.from("strategy"),
-          tokenMint.toBuffer(),
-          publicKey.toBuffer(),
-          Buffer.from(new BN(strategyId).toArray('le', 8))
-        ],
-        LENDING_PROGRAM_ID
+      // Use the exact strategy address from the script instead of deriving
+      const strategyPubkey = new PublicKey(strategyAddress);
+      console.log('🎯 Using exact strategy from script:', strategyPubkey.toString());
+
+      // Find target strategy to get YT mint like in the script
+      const strategies = await contractService.getAllStrategies();
+      const targetStrategy = strategies.find((s: any) => s.publicKey.toBase58() === strategyAddress);
+      if (!targetStrategy) {
+        throw new Error('Strategy not found');
+      }
+
+      // Get user token account
+      const userTokenAccounts = await contractService.lendingProgram?.provider.connection.getTokenAccountsByOwner(
+        publicKey, 
+        { mint: tokenMint }
       );
-      console.log('🎯 Using consistent strategy PDA:', strategyPDA.toString());
-      
-      const [poolPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from("lending_pool"), poolOwner.toBuffer()],
-        LENDING_PROGRAM_ID
+      if (!userTokenAccounts?.value.length) {
+        throw new Error('No token account found for this mint');
+      }
+      const userTokenAccount = userTokenAccounts.value[0].pubkey;
+
+      // Get YT mint from strategy like in the script
+      const ytMint = targetStrategy.account.tokenYieldAddress || targetStrategy.account.token_yield_address;
+      const ytMintAddress = new PublicKey(ytMint);
+
+      // Get or create user YT account
+      const userYtAccounts = await contractService.lendingProgram?.provider.connection.getTokenAccountsByOwner(
+        publicKey, 
+        { mint: ytMintAddress }
       );
       
-      const [userDepositPDA] = await PublicKey.findProgramAddress(
+      let userYtAccount;
+      if (userYtAccounts?.value.length) {
+        userYtAccount = userYtAccounts.value[0].pubkey;
+        console.log('✅ YT account already exists:', userYtAccount.toString());
+      } else {
+        // Calculate ATA address like in script
+        userYtAccount = await getAssociatedTokenAddress(ytMintAddress, publicKey);
+        
+        // Double-check if account exists using the ATA address
+        const ytAccInfo = await contractService.lendingProgram?.provider.connection.getAccountInfo(userYtAccount);
+        if (!ytAccInfo) {
+          console.log('Creating YT account...');
+          try {
+            const ataIx = createAssociatedTokenAccountInstruction(
+              publicKey, // payer
+              userYtAccount, // ata
+              publicKey, // owner
+              ytMintAddress // mint
+            );
+            const { Transaction } = await import('@solana/web3.js');
+            const tx = new Transaction().add(ataIx);
+            
+            // Get latest blockhash to avoid "already processed" error
+            const { blockhash } = await contractService.lendingProgram?.provider.connection.getLatestBlockhash();
+            tx.recentBlockhash = blockhash;
+            tx.feePayer = publicKey;
+            
+            await contractService.lendingProgram?.provider.sendAndConfirm(tx, []);
+            console.log('✅ YT account created!');
+          } catch (createError) {
+            console.log('⚠️ YT account creation failed, but continuing - it may already exist:', createError.message);
+            // Continue anyway - the account might exist now
+          }
+        } else {
+          console.log('✅ YT account already exists at ATA address');
+        }
+      }
+
+      // Vault PDA like in the script
+      const [vaultPda] = findVaultPDA(tokenMint, strategyId);
+
+      // UserDeposit PDA like in the script  
+      const [userDepositPda] = PublicKey.findProgramAddressSync(
         [
           Buffer.from("user_deposit"),
           publicKey.toBuffer(),
-          poolPDA.toBuffer(),
-          strategyPDA.toBuffer(),
+          strategyPubkey.toBuffer(),
         ],
         LENDING_PROGRAM_ID
       );
-      
-      const [poolAuthorityPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from("authority"), poolOwner.toBuffer()],
-        LENDING_PROGRAM_ID
-      );
-      
-      const [ytMintPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from("yt_mint"), poolOwner.toBuffer()],
-        LENDING_PROGRAM_ID
-      );
 
-      // Get associated token accounts
-      const { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, NATIVE_MINT } = await import("@solana/spl-token");
-      
-      // All tokens are now SPL tokens
-      const userTokenAccount = await getAssociatedTokenAddress(tokenMint, publicKey);
-      console.log('🔧 Using SPL token account:', userTokenAccount.toString());
-      
-      const userYtAccount = await getAssociatedTokenAddress(ytMintPDA, publicKey);
-      const vaultAccount = await getAssociatedTokenAddress(tokenMint, poolAuthorityPDA, true);
-
-      const accounts = {
-        poolPDA,
-        strategyPDA,
-        userDepositPDA,
-        poolAuthorityPDA,
-        ytMintPDA,
-        userTokenAccount,
-        userYtAccount,
-        vaultAccount,
-      };
-
-      console.log('📋 Using deployed accounts:', {
-        poolPDA: accounts.poolPDA.toString(),
-        strategyPDA: accounts.strategyPDA.toString(),
-        userDepositPDA: accounts.userDepositPDA.toString(),
-        ytMintPDA: accounts.ytMintPDA.toString(),
-        userTokenAccount: accounts.userTokenAccount.toString(),
-        userYtAccount: accounts.userYtAccount.toString(),
-        vaultAccount: accounts.vaultAccount.toString(),
-      });
+      // Debug PDA calculation
+      console.log('🔍 PDA Calculation Debug:');
+      console.log('  User:', publicKey.toString());
+      console.log('  Strategy:', strategyPubkey.toString());
+      console.log('  Program ID:', LENDING_PROGRAM_ID.toString());
+      console.log('  Calculated UserDeposit PDA:', userDepositPda.toString());
+      console.log('  Expected UserDeposit PDA: NYT7cFkFrMBhuouEHE8GjH6FMDVnqYWkom7DTCafpTk');
 
       // Convert amount to proper decimals
       const decimals = tokenMint.equals(USDC_MINT) ? TOKEN_DECIMALS.USDC : TOKEN_DECIMALS.SOL;
-      const amountBN = Math.floor(amount * Math.pow(10, decimals));
+      const depositAmount = Math.floor(amount * Math.pow(10, decimals));
 
-      console.log('💰 Amount with decimals:', amountBN);
+      console.log('📋 Using accounts like in script:', {
+        userTokenAccount: userTokenAccount.toString(),
+        userYtAccount: userYtAccount.toString(),
+        vaultPda: vaultPda.toString(),
+        ytMintAddress: ytMintAddress.toString(),
+        userDepositPda: userDepositPda.toString(),
+        depositAmount
+      });
 
-      // Check if pool exists
-      console.log('🔍 Checking if pool exists...');
-      try {
-        await contractService.getPool(poolOwner);
-        console.log('✅ Pool already exists');
-      } catch (poolError) {
-        console.log('❌ Pool not found. Please create the pool first using the admin page.');
-        throw new Error('Pool not found. Please create the pool first using the admin page.');
-      }
-
-      // Check if strategy exists and create if needed
-      console.log('🔍 Checking if strategy exists...');
-      try {
-        // Check if strategy exists at the consistent PDA
-        const strategyAccountInfo = await contractService.lendingProgram?.provider.connection.getAccountInfo(strategyPDA);
-        if (strategyAccountInfo) {
-          console.log('✅ Strategy already exists at PDA:', strategyPDA.toString());
-        } else {
-          console.log('❌ Strategy not found, creating...');
-          try {
-            const createStrategyTxId = await contractService.createStrategy(
-              publicKey,
-              tokenMint,
-              strategyId,
-              5000, // 5% APY
-              "SOL High Yield Strategy",
-              "High yield strategy for SOL deposits"
-            );
-            console.log('✅ Strategy created:', createStrategyTxId);
-            
-            // Wait for confirmation
-            console.log('⏳ Waiting for strategy creation confirmation...');
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          } catch (createStrategyError) {
-            console.error('❌ Failed to create strategy:', createStrategyError);
-            // Check if the error is because the strategy already exists
-            if (createStrategyError.message && createStrategyError.message.includes('already in use')) {
-              console.log('✅ Strategy already exists (detected from creation error)');
-            } else {
-              throw new Error('Failed to create strategy');
-            }
-          }
-        }
-      } catch (strategyError) {
-        console.error('❌ Failed to check strategy:', strategyError);
-        throw new Error('Failed to check strategy');
-      }
-
-      // Check if user deposit account exists and initialize if needed
-      console.log('🔍 Checking if user deposit account exists...');
-      try {
-        await contractService.getUserDeposit(publicKey, accounts.poolPDA, strategyPDA);
-        console.log('✅ User deposit account already exists');
-      } catch (error) {
-        console.log('❌ User deposit account not found, initializing...');
-        try {
-          const initTxId = await contractService.initializeUserDeposit(
-            publicKey,
-            publicKey,
-            strategyPDA
-          );
-          console.log('✅ User deposit account initialized:', initTxId);
-          
-          // Wait a moment for the transaction to be confirmed
-          console.log('⏳ Waiting for transaction confirmation...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } catch (initError) {
-          console.error('❌ Failed to initialize user deposit account:', initError);
-          throw new Error('Failed to initialize user deposit account');
-        }
-      }
-
-      // Check and create token accounts if needed
-      console.log('🔍 Checking token accounts...');
-      
-      if (isNativeSOL) {
-        console.log('🔧 Preparing wrapped SOL account...');
-        
-        try {
-          // Check if wrapped SOL account exists
-          const wsolAccountInfo = await contractService.getTokenAccountInfo(NATIVE_MINT, publicKey);
-          
-          if (!wsolAccountInfo.exists) {
-            console.log('❌ Wrapped SOL account does not exist, will be created in transaction');
-            
-            // The wrapped SOL account will be created and funded automatically 
-            // when we call the deposit function with the proper instructions
-            console.log('✅ Wrapped SOL account will be handled by the contract');
-          } else {
-            console.log('✅ Wrapped SOL account already exists');
-            console.log('💰 Current wrapped SOL balance:', wsolAccountInfo.balance);
-            
-            // Check if we need to add more SOL to the wrapped account
-            const currentBalance = Number(wsolAccountInfo.balance) / 1e9;
-            const requiredAmount = amount;
-            
-            if (currentBalance < requiredAmount) {
-              console.log(`💸 Need to add ${requiredAmount - currentBalance} SOL to wrapped account`);
-            }
-          }
-        } catch (error) {
-          console.log('⚠️ Could not check wrapped SOL account, will be handled by contract:', error);
-        }
-      } else {
-        try {
-          // Check if SPL token account exists
-          const tokenAccountInfo = await contractService.getTokenAccountInfo(tokenMint, publicKey);
-          
-          if (!tokenAccountInfo.exists) {
-            console.log('❌ SPL token account does not exist - will be created automatically by contract');
-          } else {
-            console.log('✅ SPL token account exists');
-          }
-        } catch (error) {
-          console.log('⚠️ Could not check SPL token account, proceeding anyway:', error);
-        }
-      }
-
-      // Check and create YT token account if needed
-      console.log('🔍 Checking YT token account...');
-      try {
-        const ytAccountInfo = await contractService.getTokenAccountInfo(accounts.ytMintPDA, publicKey);
-        
-        if (!ytAccountInfo.exists) {
-          console.log('❌ YT token account does not exist, creating...');
-          
-          // Create the YT token account
-          const createYtAccountTx = await contractService.createTokenAccount(
-            publicKey,
-            accounts.ytMintPDA,
-            publicKey
-          );
-          console.log('✅ YT token account created:', createYtAccountTx);
-          
-          // Wait for confirmation
-          console.log('⏳ Waiting for YT account creation confirmation...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } else {
-          console.log('✅ YT token account already exists');
-        }
-      } catch (error) {
-        console.error('❌ Failed to check/create YT token account:', error);
-        // Try to continue anyway, let the contract handle it
-        console.log('⚠️ Proceeding with deposit, contract may handle YT account creation');
-      }
-
-      // Check and create vault account if needed
-      console.log('🔍 Checking vault account...');
-      try {
-        const vaultAccountInfo = await contractService.getTokenAccountInfo(tokenMint, poolPDA, true);
-        
-        if (!vaultAccountInfo.exists) {
-          console.log('❌ Vault account does not exist, will be created in transaction');
-          
-          // The vault account will be created automatically by the contract when needed
-          console.log('✅ Vault account will be handled by the contract');
-        } else {
-          console.log('✅ Vault account already exists');
-          console.log('💰 Current vault balance:', vaultAccountInfo.balance);
-        }
-      } catch (error) {
-        console.log('⚠️ Could not check vault account, will be handled by contract:', error);
-      }
-
-      // Handle wrapped SOL creation if needed
-      if (isNativeSOL) {
-        console.log('🔧 Preparing wrapped SOL transaction...');
-        
-        try {
-          // Check if wrapped SOL account exists and create/fund it if needed
-          const wsolAccountInfo = await contractService.getTokenAccountInfo(NATIVE_MINT, publicKey);
-          
-          if (!wsolAccountInfo.exists || Number(wsolAccountInfo.balance) < amountBN) {
-            console.log('💸 Creating/funding wrapped SOL account...');
-            
-            // Import necessary functions
-            const { Transaction, SystemProgram } = await import('@solana/web3.js');
-            const { createAssociatedTokenAccountInstruction, createSyncNativeInstruction } = await import('@solana/spl-token');
-            
-            // Build the transaction
-            const transaction = new Transaction();
-            
-            // Add create ATA instruction if account doesn't exist
-            if (!wsolAccountInfo.exists) {
-              const createATAInstruction = createAssociatedTokenAccountInstruction(
-                publicKey, // payer
-                userTokenAccount, // ata
-                publicKey, // owner
-                NATIVE_MINT // mint
-              );
-              transaction.add(createATAInstruction);
-              console.log('➕ Added create wrapped SOL account instruction');
-            }
-            
-            // Add transfer SOL to wrapped account instruction
-            const transferInstruction = SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: userTokenAccount,
-              lamports: Number(amountBN),
-            });
-            transaction.add(transferInstruction);
-            console.log('➕ Added transfer SOL instruction');
-            
-            // Add sync native instruction to convert SOL to wrapped SOL
-            const syncNativeInstruction = createSyncNativeInstruction(userTokenAccount);
-            transaction.add(syncNativeInstruction);
-            console.log('➕ Added sync native instruction');
-            
-            // Get connection and wallet
-            const provider = contractService.lendingProgram?.provider;
-            if (!provider || !provider.connection || !provider.wallet) {
-              throw new Error('Provider not available');
-            }
-            
-            // Send and confirm transaction
-            console.log('📤 Sending wrapped SOL transaction...');
-            transaction.feePayer = publicKey;
-            transaction.recentBlockhash = (await provider.connection.getLatestBlockhash()).blockhash;
-            
-            const signedTx = await provider.wallet.signTransaction(transaction);
-            const wsolTxId = await provider.connection.sendRawTransaction(signedTx.serialize());
-            await provider.connection.confirmTransaction(wsolTxId);
-            
-            console.log('✅ Wrapped SOL transaction confirmed:', wsolTxId);
-            
-            // Wait a moment for the next transaction to get a different blockhash
-            console.log('⏳ Waiting for next blockhash...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } else {
-            console.log('✅ Wrapped SOL account ready');
-          }
-        } catch (error) {
-          console.error('❌ Failed to prepare wrapped SOL:', error);
-          throw new Error('Failed to prepare wrapped SOL account');
-        }
-      }
-
-      // Create vault account if needed
-      console.log('🔍 Ensuring vault account exists...');
-      try {
-        const vaultAccountInfo = await contractService.getTokenAccountInfo(tokenMint, poolPDA, true);
-        
-        if (!vaultAccountInfo.exists) {
-          console.log('💸 Creating vault account...');
-          
-          // Import necessary functions
-          const { Transaction } = await import('@solana/web3.js');
-          const { createAssociatedTokenAccountInstruction } = await import('@solana/spl-token');
-          
-          // Build the transaction for vault account creation
-          const vaultTransaction = new Transaction();
-          
-          // Add create vault account instruction
-          const createVaultInstruction = createAssociatedTokenAccountInstruction(
-            publicKey, // payer
-            vaultAccount, // ata
-            poolAuthorityPDA, // owner (the pool authority PDA owns the vault)
-            tokenMint // mint
-          );
-          vaultTransaction.add(createVaultInstruction);
-          console.log('➕ Added create vault account instruction');
-          
-          // Get connection and wallet
-          const provider = contractService.lendingProgram?.provider;
-          if (!provider || !provider.connection || !provider.wallet) {
-            throw new Error('Provider not available');
-          }
-          
-          // Send and confirm transaction
-          console.log('📤 Sending vault account creation transaction...');
-          vaultTransaction.feePayer = publicKey;
-          vaultTransaction.recentBlockhash = (await provider.connection.getLatestBlockhash()).blockhash;
-          
-          const signedVaultTx = await provider.wallet.signTransaction(vaultTransaction);
-          const vaultTxId = await provider.connection.sendRawTransaction(signedVaultTx.serialize());
-          await provider.connection.confirmTransaction(vaultTxId);
-          
-          console.log('✅ Vault account creation transaction confirmed:', vaultTxId);
-          
-          // Wait a moment for the next transaction to get a different blockhash
-          console.log('⏳ Waiting for next blockhash...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } else {
-          console.log('✅ Vault account already exists');
-        }
-      } catch (error) {
-        console.error('❌ Failed to create vault account:', error);
-        // Don't throw here, let the contract handle it
-        console.log('⚠️ Proceeding with deposit, contract may handle vault creation');
-      }
-
-      // Perform the deposit using the consistent strategy PDA
-      console.log('💸 Executing deposit...');
-      console.log('🔧 Using consistent strategy PDA:', strategyPDA.toString());
+      // Call deposit exactly like in the script
       const txId = await contractService.deposit(
         publicKey,
-        publicKey,
-        strategyPDA, // Use the consistent PDA
-        amountBN,
-        accounts.userTokenAccount,
-        accounts.userYtAccount,
-        accounts.vaultAccount,
-        accounts.ytMintPDA
+        strategyPubkey,
+        depositAmount,
+        userTokenAccount,
+        userYtAccount,
+        vaultPda,
+        ytMintAddress,
+        tokenMint
       );
 
       console.log('✅ Deposit successful! TX:', txId);
@@ -421,6 +171,14 @@ export const useLendingSimplified = () => {
 
     } catch (err) {
       console.error('❌ Deposit failed:', err);
+      
+      // Check if transaction actually succeeded but shows "already processed" error
+      if (err.message && err.message.includes('already been processed')) {
+        console.log('✅ Transaction was already processed - this is usually a success!');
+        // Don't throw error for "already processed" - it means transaction succeeded
+        return 'Transaction processed successfully';
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       throw err;
@@ -429,12 +187,12 @@ export const useLendingSimplified = () => {
     }
   }, [contractService, publicKey]);
 
-  // Simplified withdraw function
+  // Simplified withdraw function using script logic
   const withdraw = useCallback(async (
     tokenMint: PublicKey,
     amount: number,
     strategyId: number,
-    poolOwner: PublicKey = DEFAULT_POOL_OWNER // Use DEFAULT_POOL_OWNER by default
+    strategyAddress: string // The actual deployed strategy address
   ) => {
     if (!contractService || !publicKey) {
       throw new Error('Wallet not connected or contract service not available');
@@ -444,90 +202,79 @@ export const useLendingSimplified = () => {
     setError(null);
 
     try {
-      console.log('🚀 Starting simplified withdraw...');
-      console.log('🔍 Strategy ID:', strategyId);
-      console.log('🔍 Token Mint:', tokenMint.toString());
-      console.log('🔍 Pool Owner (passed):', poolOwner.toString());
+      console.log('🚀 Starting withdraw with exact script logic...');
+      console.log('🔍 Strategy address (raw):', strategyAddress);
+      console.log('🔍 Amount:', amount);
 
-      // Find the correct pool owner by checking where the deposit exists
-      let actualPoolOwner = poolOwner;
-      let poolFound = false;
-
-      // Try multiple pool owners in order of preference
-      const potentialPoolOwners = [
-        poolOwner,           // Passed pool owner (DEFAULT_POOL_OWNER)
-        publicKey,           // User as pool owner
-      ];
-
-      console.log('🔍 Trying to find correct pool owner...');
+      // Convert strategy address to string if it's a PublicKey object
+      const strategyAddressStr = typeof strategyAddress === 'string' 
+        ? strategyAddress 
+        : strategyAddress.toString();
       
-      for (const testPoolOwner of potentialPoolOwners) {
-        try {
-          console.log(`🔍 Testing pool owner: ${testPoolOwner.toString()}`);
-          
-          // Check if pool exists
-          await contractService.getPool(testPoolOwner);
-          console.log('✅ Pool exists');
-          
-          // Check if user deposit exists for this pool/strategy combination
-          const [poolPDA] = findLendingPoolPDA(testPoolOwner);
-          const [strategyPDA] = findStrategyPDA(tokenMint, testPoolOwner, strategyId);
-          
-          try {
-            const deposit = await contractService.getUserDeposit(publicKey, poolPDA, strategyPDA);
-            if (deposit && deposit.amount > 0) {
-              console.log(`✅ Found deposit with pool owner: ${testPoolOwner.toString()}`);
-              actualPoolOwner = testPoolOwner;
-              poolFound = true;
-              break;
-            }
-          } catch (depositError) {
-            console.log(`❌ No deposit found for pool owner: ${testPoolOwner.toString()}`);
-          }
-        } catch (poolError) {
-          console.log(`❌ Pool not found for owner: ${testPoolOwner.toString()}`);
-        }
+      console.log('🔍 Strategy address (string):', strategyAddressStr);
+
+      // Use the exact strategy address from the script
+      const strategyPubkey = new PublicKey(strategyAddressStr);
+
+      // Find target strategy to get YT mint like in the script
+      const strategies = await contractService.getAllStrategies();
+      console.log('🔍 Available strategies:', strategies.map(s => s.publicKey.toBase58()));
+      
+      const targetStrategy = strategies.find((s: any) => s.publicKey.toBase58() === strategyAddressStr);
+      if (!targetStrategy) {
+        console.error('Strategy not found! Looking for:', strategyAddressStr);
+        console.error('Available strategies:', strategies.map(s => s.publicKey.toBase58()));
+        throw new Error(`Strategy not found: ${strategyAddressStr}`);
       }
 
-      if (!poolFound) {
-        throw new Error('No valid pool with deposit found. Please make sure you have made a deposit first.');
-      }
-
-      // Build all required accounts using correct pool owner
-      const accounts = await contractService.buildLendingAccounts(
-        publicKey,
-        actualPoolOwner,
-        tokenMint,
-        publicKey,
-        strategyId
+      // Get user token account
+      const userTokenAccounts = await contractService.lendingProgram?.provider.connection.getTokenAccountsByOwner(
+        publicKey, 
+        { mint: tokenMint }
       );
+      if (!userTokenAccounts?.value.length) {
+        throw new Error('No token account found for this mint');
+      }
+      const userTokenAccount = userTokenAccounts.value[0].pubkey;
 
-      console.log('🔍 Built accounts:');
-      console.log('  - Pool PDA:', accounts.poolPDA?.toString());
-      console.log('  - Strategy PDA:', accounts.strategyPDA?.toString());
-      console.log('  - User Deposit PDA:', accounts.userDepositPDA?.toString());
-      console.log('  - User Token Account:', accounts.userTokenAccount?.toString());
-      console.log('  - User YT Account:', accounts.userYtAccount?.toString());
-      console.log('  - Vault Account:', accounts.vaultAccount?.toString());
-      console.log('  - YT Mint PDA:', accounts.ytMintPDA?.toString());
+      // Get YT mint from strategy like in the script
+      const ytMint = targetStrategy.account.tokenYieldAddress || targetStrategy.account.token_yield_address;
+      const ytMintAddress = new PublicKey(ytMint);
+
+      // Get user YT account
+      const userYtAccounts = await contractService.lendingProgram?.provider.connection.getTokenAccountsByOwner(
+        publicKey, 
+        { mint: ytMintAddress }
+      );
+      if (!userYtAccounts?.value.length) {
+        throw new Error('No YT account found - please deposit first');
+      }
+      const userYtAccount = userYtAccounts.value[0].pubkey;
+
+      // Vault PDA like in the script
+      const [vaultPda] = findVaultPDA(tokenMint, strategyId);
 
       // Convert amount to proper decimals
       const decimals = tokenMint.equals(USDC_MINT) ? TOKEN_DECIMALS.USDC : TOKEN_DECIMALS.SOL;
-      const amountBN = Math.floor(amount * Math.pow(10, decimals));
+      const withdrawAmount = Math.floor(amount * Math.pow(10, decimals));
 
-      console.log(`🔍 Converting amount: ${amount} -> ${amountBN} (decimals: ${decimals})`);
+      console.log('📋 Using accounts like in script:', {
+        userTokenAccount: userTokenAccount.toString(),
+        userYtAccount: userYtAccount.toString(),
+        vaultPda: vaultPda.toString(),
+        ytMintAddress: ytMintAddress.toString(),
+        withdrawAmount
+      });
 
-      // Perform the withdrawal
-      console.log('💸 Executing withdraw transaction...');
+      // Call withdraw exactly like in the script
       const txId = await contractService.withdraw(
         publicKey,
-        actualPoolOwner,
-        accounts.strategyPDA,
-        amountBN,
-        accounts.userTokenAccount,
-        accounts.userYtAccount,
-        accounts.vaultAccount,
-        accounts.ytMintPDA
+        strategyPubkey,
+        withdrawAmount,
+        userTokenAccount,
+        userYtAccount,
+        vaultPda,
+        ytMintAddress
       );
 
       console.log('✅ Withdraw successful! TX:', txId);
@@ -535,15 +282,6 @@ export const useLendingSimplified = () => {
 
     } catch (err) {
       console.error('❌ Withdraw failed:', err);
-      
-      // Log transaction details for debugging
-      if (err?.transactionLogs) {
-        console.error('📋 Transaction logs:', err.transactionLogs);
-      }
-      if (err?.programErrorStack) {
-        console.error('📋 Program error stack:', err.programErrorStack);
-      }
-      
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       throw err;

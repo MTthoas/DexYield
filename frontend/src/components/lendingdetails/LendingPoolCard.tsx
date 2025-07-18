@@ -40,6 +40,8 @@ interface LendingPoolCardProps {
     availableAt: Date | null;
   };
   loading?: boolean;
+  isAdmin?: boolean;
+  onToggleStatus?: (poolId: string, currentStatus: boolean) => Promise<void>;
 }
 
 export function LendingPoolCard({
@@ -52,6 +54,8 @@ export function LendingPoolCard({
   onRedeem,
   checkRedeemAvailability,
   loading = false,
+  isAdmin = false,
+  onToggleStatus,
 }: LendingPoolCardProps) {
   const [amount, setAmount] = useState<string>("");
   const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
@@ -173,6 +177,20 @@ export function LendingPoolCard({
               <Badge className="text-gray-400 bg-gray-400/10 border-gray-400/20 text-xs">
                 Inactive
               </Badge>
+            )}
+            {isAdmin && onToggleStatus && (
+              <Button
+                onClick={() => onToggleStatus(pool.id, pool.isActive)}
+                variant="outline"
+                size="sm"
+                className={`h-6 px-2 text-xs border ${
+                  pool.isActive
+                    ? "border-red-500/30 text-red-400 hover:bg-red-500/10"
+                    : "border-green-500/30 text-green-400 hover:bg-green-500/10"
+                }`}
+              >
+                {pool.isActive ? "Disable" : "Enable"}
+              </Button>
             )}
           </div>
         </div>
