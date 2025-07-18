@@ -161,14 +161,36 @@ export const useLendingActions = () => {
         // Pour SOL natif, utiliser le wallet comme source
         userTokenAccount = publicKey;
       } else {
-        const userTokenAccounts = await connection.getTokenAccountsByOwner(
-          publicKey, 
-          { mint: tokenMint }
-        );
-        if (!userTokenAccounts.value.length) {
-          throw new Error(`Aucun compte ${tokenMint.toString()} trouvé pour ce wallet`);
+        // Pour les autres tokens, créer automatiquement l'ATA si nécessaire
+        try {
+          const userTokenAccounts = await connection.getTokenAccountsByOwner(
+            publicKey, 
+            { mint: tokenMint }
+          );
+          
+          if (userTokenAccounts.value.length > 0) {
+            userTokenAccount = userTokenAccounts.value[0].pubkey;
+          } else {
+            // Créer automatiquement l'ATA pour le token
+            console.log(`🔨 Creating ATA for token ${tokenMint.toString()}`);
+            const userTokenAccountInfo = await getOrCreateAssociatedTokenAccount(
+              connection,
+              {
+                publicKey,
+                secretKey: null as any, // Pas utilisé pour getOrCreateAssociatedTokenAccount
+                signTransaction: sendTransaction as any,
+                signAllTransactions: null as any
+              } as any,
+              tokenMint,
+              publicKey
+            );
+            userTokenAccount = userTokenAccountInfo.address;
+            console.log(`✅ ATA created: ${userTokenAccount.toString()}`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to create ATA for token ${tokenMint.toString()}:`, error);
+          throw new Error(`Failed to create token account for ${tokenMint.toString()}. You may need to get this token first.`);
         }
-        userTokenAccount = userTokenAccounts.value[0].pubkey;
       }
 
       // 2. Compte YT de l'utilisateur (créer s'il n'existe pas)

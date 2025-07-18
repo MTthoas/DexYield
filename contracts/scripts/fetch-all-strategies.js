@@ -58,8 +58,6 @@ async function main() {
     for (const s of strategies) {
         // Adresse de la stratégie
         const strategyPubkey = s.publicKey.toBase58();
-        // Solde du vault associé (token_address, strategy_id)
-        // On suppose que le champ token_address et strategy_id existent dans s.account
         const tokenAddress = s.account.tokenAddress || s.account.token_address;
         const strategyId = s.account.strategyId || s.account.strategy_id;
         // Derive le vault PDA (même logique que dans le smart contract)
@@ -79,12 +77,29 @@ async function main() {
         } catch (e) {
             vaultBalance = 'N/A';
         }
-        console.log(`- Strategy: ${strategyPubkey}`);
-        console.log(`  Token: ${tokenAddress}`);
-        console.log(`  Strategy ID: ${strategyId}`);
-        console.log(`  Vault: ${vaultPda.toBase58()}`);
-        console.log(`  Vault balance: ${vaultBalance}`);
-        console.log(`  YT Mint: ${s.account.tokenYieldAddress || s.account.token_yield_address}`);
+        // JSON pool complet
+        const poolJson = {
+            id: strategyPubkey,
+            token: {
+                symbol: s.account.tokenSymbol || "?",
+                mint: tokenAddress.toString(),
+                decimals: s.account.tokenDecimals || 9,
+                icon: `/images/tokens/${(s.account.tokenSymbol||'').toLowerCase()}.png`
+            },
+            apy: s.account.rewardApy ? Number(s.account.rewardApy) / 10000 : 0,
+            tvl: vaultBalance,
+            totalDeposits: s.account.totalDeposited ? Number(s.account.totalDeposited) / 1e9 : 0,
+            totalYieldDistributed: null,
+            userDeposit: null,
+            userYieldEarned: null,
+            userDepositTime: null,
+            isActive: s.account.active,
+            riskLevel: "Medium",
+            createdAt: new Date(Number(s.account.createdAt) * 1000).toISOString(),
+            vault: vaultPda.toBase58(),
+            ytMint: s.account.tokenYieldAddress ? s.account.tokenYieldAddress.toString() : (s.account.token_yield_address ? s.account.token_yield_address.toString() : null)
+        };
+        console.log(JSON.stringify(poolJson, null, 2));
         console.log('------------------------------');
     }
 
@@ -159,74 +174,7 @@ async function main() {
         LENDING_PROGRAM_ID
     );
 
-    // 4. YT mint - utiliser l'adresse réelle stockée dans la stratégie
-    const ytMintAddress = new PublicKey(targetStrategy.account.tokenYieldAddress || targetStrategy.account.token_yield_address);
-
-    // 5. UserDeposit PDA
-    const [userDepositPda] = await anchor.web3.PublicKey.findProgramAddress(
-        [
-            Buffer.from("user_deposit"),
-            payer.publicKey.toBuffer(),
-            strategyPubkey.toBuffer(),
-        ],
-        LENDING_PROGRAM_ID
-    );
-
-    // 6. Token mint (USDC)
-    const tokenMint = testTokenMint;
-
-    // 7. Token program
-    const tokenProgram = TOKEN_PROGRAM_ID;
-
-    // 8. System program
-    const systemProgram = SystemProgram.programId;
-
-    // Appel deposit
-    console.log("\n🚀 Dépôt de 1 USDC sur la stratégie 1...");
-    try {
-        await lending.methods.deposit(new anchor.BN(depositAmount))
-            .accounts({
-                user: payer.publicKey,
-                userDeposit: userDepositPda,
-                strategy: strategyPubkey,
-                userTokenAccount: userTokenAccount,
-                userYtAccount: userYtAccount,
-                tokenMint: tokenMint,
-                vaultAccount: vaultPda,
-                ytMint: ytMintAddress,
-                tokenProgram: tokenProgram,
-                systemProgram: systemProgram,
-            })
-            .signers([payer])
-            .rpc();
-        console.log("✅ Dépôt effectué avec succès !");
-    } catch (e) {
-        console.error("❌ Erreur lors du dépôt:", e);
-        return;
-    }
-
-    // --- RETRAIT TEST ---
-    const withdrawAmount = 1_000_000; // 1 USDC (la moitié du dépôt)
-    
-    console.log("\n💸 Retrait de 1 USDC de la stratégie 1...");
-    try {
-        await lending.methods.withdraw(new anchor.BN(withdrawAmount))
-            .accounts({
-                user: payer.publicKey,
-                userDeposit: userDepositPda,
-                strategy: strategyPubkey,
-                userTokenAccount: userTokenAccount,
-                userYtAccount: userYtAccount,
-                vaultAccount: vaultPda,
-                ytMint: ytMintAddress,
-                tokenProgram: tokenProgram,
-            })
-            .signers([payer])
-            .rpc();
-        console.log("✅ Retrait effectué avec succès !");
-    } catch (e) {
-        console.error("❌ Erreur lors du retrait:", e);
-    }
+   
 
 }
 
