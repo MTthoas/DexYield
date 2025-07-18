@@ -120,10 +120,15 @@ export function LendingPoolCard({
 
   // Ajout : formatage du solde disponible selon les décimales du token (utilitaire universel)
   const formatAvailable = () => {
-    // Convertir le nombre décimal en entier en multipliant par 10^decimals
+    // Pour SOL natif, afficher le solde tel quel (pas de décimales SPL)
+    if (pool.token.symbol === "SOL") {
+      // Correction : si userTokenBalance est undefined, retourne 0
+      return (userTokenBalance ?? 0).toFixed(6);
+    }
+    // Sinon, format SPL classique
     const decimals = pool.token.decimals || 6;
     const integerBalance = Math.floor(
-      userTokenBalance * Math.pow(10, decimals)
+      (userTokenBalance ?? 0) * Math.pow(10, decimals)
     );
     return formatTokenAmount(BigInt(integerBalance), decimals);
   };
