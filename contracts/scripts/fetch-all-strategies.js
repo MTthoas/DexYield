@@ -84,7 +84,124 @@ async function main() {
         console.log(`  Strategy ID: ${strategyId}`);
         console.log(`  Vault: ${vaultPda.toBase58()}`);
         console.log(`  Vault balance: ${vaultBalance}`);
+        console.log(`  YT Mint: ${s.account.tokenYieldAddress || s.account.token_yield_address}`);
         console.log('------------------------------');
+    }
+
+    // --- DÉPÔT TEST ---
+    // Paramètres du test
+    const testStrategyId = new anchor.BN(1);
+    const testTokenMint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+    const depositAmount = 1_000_000; // 1 USDC (6 décimales)
+
+    // Trouver la stratégie correspondante (correction robustes sur types)
+    const targetStrategy = strategies.find(s => {
+        const sid = s.account.strategyId || s.account.strategy_id;
+        const sidNum = (sid && sid.toNumber) ? sid.toNumber() : Number(sid);
+        const token = s.account.tokenAddress || s.account.token_address;
+        let tokenStr;
+        if (token && token.toBase58) tokenStr = token.toBase58();
+        else if (typeof token === 'string') tokenStr = token;
+        else tokenStr = new PublicKey(token).toBase58();
+        return sidNum === 1 && tokenStr === testTokenMint.toBase58();
+    });
+    if (!targetStrategy) {
+        console.error("❌ Aucune stratégie trouvée avec l'ID 1 et le bon mint");
+        process.exit(1);
+    }
+    const strategyPubkey = targetStrategy.publicKey;
+    const strategyBump = targetStrategy.account.bump || targetStrategy.account._bump || 255; // fallback
+
+    // Comptes nécessaires
+    // 1. Compte USDC de l'utilisateur
+    const userTokenAccounts = await provider.connection.getTokenAccountsByOwner(payer.publicKey, { mint: testTokenMint });
+    if (!userTokenAccounts.value.length) {
+        console.error("❌ Aucun compte USDC trouvé pour ce wallet");
+        process.exit(1);
+    }
+    const userTokenAccount = new PublicKey(userTokenAccounts.value[0].pubkey);
+
+    // 2. Compte YT de l'utilisateur (créé si besoin)
+    // On suppose que le mint YT est stocké dans la stratégie
+    const ytMint = targetStrategy.account.tokenYieldAddress || targetStrategy.account.token_yield_address;
+    const userYtAccounts = await provider.connection.getTokenAccountsByOwner(payer.publicKey, { mint: ytMint });
+    let userYtAccount;
+    if (userYtAccounts.value.length) {
+        userYtAccount = new PublicKey(userYtAccounts.value[0].pubkey);
+    } else {
+        // Calcule l'adresse ATA
+        const ata = await anchor.utils.token.associatedAddress({ mint: new PublicKey(ytMint), owner: payer.publicKey });
+        userYtAccount = ata;
+        // Vérifie si le compte existe, sinon le crée
+        const ytAccInfo = await provider.connection.getAccountInfo(userYtAccount);
+        if (!ytAccInfo) {
+            console.log(`Compte YT ${userYtAccount.toBase58()} non initialisé, création...`);
+            const { createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+            const ataIx = createAssociatedTokenAccountInstruction(
+                payer.publicKey, // payer
+                userYtAccount,   // ata
+                payer.publicKey, // owner
+                new PublicKey(ytMint) // mint
+            );
+            const tx = new anchor.web3.Transaction().add(ataIx);
+            await provider.sendAndConfirm(tx, [payer]);
+            console.log("✅ Compte YT créé !");
+        }
+    }
+
+    // 3. Vault PDA
+    const [vaultPda] = await anchor.web3.PublicKey.findProgramAddress(
+        [
+            Buffer.from("vault_account"),
+            testTokenMint.toBuffer(),
+            Buffer.from(new anchor.BN(1).toArray("le", 8)),
+        ],
+        LENDING_PROGRAM_ID
+    );
+
+    // 4. YT mint - utiliser l'adresse réelle stockée dans la stratégie
+    const ytMintAddress = new PublicKey(targetStrategy.account.tokenYieldAddress || targetStrategy.account.token_yield_address);
+
+    // 5. UserDeposit PDA
+    const [userDepositPda] = await anchor.web3.PublicKey.findProgramAddress(
+        [
+            Buffer.from("user_deposit"),
+            payer.publicKey.toBuffer(),
+            strategyPubkey.toBuffer(),
+        ],
+        LENDING_PROGRAM_ID
+    );
+
+    // 6. Token mint (USDC)
+    const tokenMint = testTokenMint;
+
+    // 7. Token program
+    const tokenProgram = TOKEN_PROGRAM_ID;
+
+    // 8. System program
+    const systemProgram = SystemProgram.programId;
+
+    // Appel deposit
+    console.log("\n🚀 Dépôt de 1 USDC sur la stratégie 1...");
+    try {
+        await lending.methods.deposit(new anchor.BN(depositAmount))
+            .accounts({
+                user: payer.publicKey,
+                userDeposit: userDepositPda,
+                strategy: strategyPubkey,
+                userTokenAccount: userTokenAccount,
+                userYtAccount: userYtAccount,
+                tokenMint: tokenMint,
+                vaultAccount: vaultPda,
+                ytMint: ytMintAddress,
+                tokenProgram: tokenProgram,
+                systemProgram: systemProgram,
+            })
+            .signers([payer])
+            .rpc();
+        console.log("✅ Dépôt effectué avec succès !");
+    } catch (e) {
+        console.error("❌ Erreur lors du dépôt:", e);
     }
 
 }

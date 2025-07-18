@@ -66,8 +66,7 @@ pub struct Deposit<'info> {
 
     #[account(
         mut,
-        seeds = [b"yt_mint", strategy.token_address.as_ref(), strategy.admin.as_ref(), &strategy.strategy_id.to_le_bytes()],
-        bump
+        constraint = yt_mint.key() == strategy.token_yield_address @ ErrorCode::InvalidYieldToken
     )]
     pub yt_mint: Account<'info, Mint>,
 
@@ -108,8 +107,7 @@ pub struct Withdraw<'info> {
 
     #[account(
         mut,
-        seeds = [b"yt_mint", strategy.token_address.as_ref(), strategy.admin.as_ref(), &strategy.strategy_id.to_le_bytes()],
-        bump
+        constraint = yt_mint.key() == strategy.token_yield_address @ ErrorCode::InvalidYieldToken
     )]
     pub yt_mint: Account<'info, Mint>,
 
@@ -213,8 +211,7 @@ pub struct Redeem<'info> {
 
     #[account(
         mut,
-        seeds = [b"yt_mint", strategy.token_address.as_ref(), strategy.admin.as_ref(), &strategy.strategy_id.to_le_bytes()],
-        bump
+        constraint = yt_mint.key() == strategy.token_yield_address @ ErrorCode::InvalidYieldToken
     )]
     pub yt_mint: Account<'info, Mint>,
 

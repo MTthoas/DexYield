@@ -40,4 +40,7 @@ pub enum ErrorCode {
 
     #[msg("Compte utilisateur déjà initialisé")]
     UserDepositAlreadyInitialized,
+
+    #[msg("Token yield invalide")]
+    InvalidYieldToken,
 }
