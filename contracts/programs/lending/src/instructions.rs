@@ -244,7 +244,7 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
 
     let user_deposit = &mut ctx.accounts.user_deposit;
     let current_time = Clock::get()?.unix_timestamp;
-    let min_duration: i64 = 60; // Durée minimale avant retrait (POC)
+    let min_duration: i64 = 5; // Durée minimale réduite pour les tests (5 secondes)
 
     // Vérifie que la stratégie passée correspond à celle du dépôt
     require_keys_eq!(

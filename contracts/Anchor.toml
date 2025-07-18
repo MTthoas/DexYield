@@ -24,7 +24,7 @@ marketplace = "9B1oveu4aVQjxboVRa4FYB9iqtbBoQhHy9FNrKNzSM8c"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/new-id.json"
 
 [scripts]

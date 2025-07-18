@@ -40,6 +40,7 @@ pub struct Deposit<'info> {
     pub user_deposit: Account<'info, UserDeposit>,
 
     #[account(
+        mut,
         seeds = [b"strategy", strategy.token_address.as_ref(), strategy.admin.as_ref(), strategy.strategy_id.to_le_bytes().as_ref()],
         bump
     )]

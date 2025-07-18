@@ -1,9 +1,11 @@
 {
+  "type": "module",
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "test": "anchor test",
+    "test:simple": "anchor test tests/lending-simple.test.ts",
     "test:dexYield": "anchor test --skip-local-validator tests/dexYield.ts",
     "test:lending": "anchor test --skip-local-validator tests/lending.ts",
     "test:marketplace": "anchor test --skip-local-validator tests/marketDex.ts",
