@@ -202,6 +202,30 @@ async function main() {
         console.log("✅ Dépôt effectué avec succès !");
     } catch (e) {
         console.error("❌ Erreur lors du dépôt:", e);
+        return;
+    }
+
+    // --- RETRAIT TEST ---
+    const withdrawAmount = 1_000_000; // 1 USDC (la moitié du dépôt)
+    
+    console.log("\n💸 Retrait de 1 USDC de la stratégie 1...");
+    try {
+        await lending.methods.withdraw(new anchor.BN(withdrawAmount))
+            .accounts({
+                user: payer.publicKey,
+                userDeposit: userDepositPda,
+                strategy: strategyPubkey,
+                userTokenAccount: userTokenAccount,
+                userYtAccount: userYtAccount,
+                vaultAccount: vaultPda,
+                ytMint: ytMintAddress,
+                tokenProgram: tokenProgram,
+            })
+            .signers([payer])
+            .rpc();
+        console.log("✅ Retrait effectué avec succès !");
+    } catch (e) {
+        console.error("❌ Erreur lors du retrait:", e);
     }
 
 }
