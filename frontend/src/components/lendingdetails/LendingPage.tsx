@@ -73,7 +73,11 @@ const createPoolsFromStrategies = (
   );
 
   return uniqueStrategies.map((strategy) => {
-    const tokenAddressStr = getPubkeyString(strategy.tokenAddress);
+    const SOL_MINT = "So11111111111111111111111111111111111111112";
+    const tokenAddressStr =
+      strategy.tokenSymbol === "SOL"
+        ? SOL_MINT
+        : getPubkeyString(strategy.tokenAddress);
     const tokenConfig = TOKENS.find((t) => t.mint === tokenAddressStr);
     const userDeposit = userDeposits?.find((d) => d.strategy === strategy.id);
     // Conversion des champs BN en nombre natif
@@ -290,9 +294,18 @@ export default function LendingPage() {
 
   // Charger les balances utilisateur
   const loadUserBalances = useCallback(async () => {
-    if (!connected || !publicKey || strategies.length === 0) return;
+    if (!connected || !publicKey) return;
 
     const balances: Record<string, number> = {};
+
+    // Toujours ajouter le solde natif SOL
+    try {
+      const solBalance = await connection.getBalance(publicKey);
+      balances["So11111111111111111111111111111111111111112"] =
+        solBalance / 1e9;
+    } catch (error) {
+      balances["So11111111111111111111111111111111111111112"] = 0;
+    }
 
     // Récupérer directement le solde USDC
     try {
@@ -350,33 +363,23 @@ export default function LendingPage() {
     for (const strategy of strategies) {
       try {
         const mintStr = new PublicKey(strategy.tokenAddress).toString();
-        if (mintStr !== USDC_MINT.toString()) {
-          // Check if this is SOL native token
-          const SOL_MINT = "So11111111111111111111111111111111111111112";
-          if (mintStr === SOL_MINT) {
-            // For SOL, use getBalance instead of token account
-            const solBalance = await connection.getBalance(publicKey);
-            balances[mintStr] = solBalance / 1e9; // Convert lamports to SOL
-            console.log(`💰 SOL balance for pool: ${balances[mintStr]} SOL`);
-          } else {
-            // For other SPL tokens
-            const balanceRaw = await getUserTokenBalance(
-              new PublicKey(strategy.tokenAddress)
-            );
-            const balance =
-              typeof balanceRaw === "bigint"
-                ? Number(balanceRaw)
-                : typeof balanceRaw === "number" && !isNaN(balanceRaw)
-                  ? balanceRaw
-                  : 0;
-            balances[mintStr] = balance;
-          }
+        if (
+          mintStr !== USDC_MINT.toString() &&
+          mintStr !== "So11111111111111111111111111111111111111112"
+        ) {
+          // For other SPL tokens
+          const balanceRaw = await getUserTokenBalance(
+            new PublicKey(strategy.tokenAddress)
+          );
+          const balance =
+            typeof balanceRaw === "bigint"
+              ? Number(balanceRaw)
+              : typeof balanceRaw === "number" && !isNaN(balanceRaw)
+                ? balanceRaw
+                : 0;
+          balances[mintStr] = balance;
         }
       } catch (error) {
-        console.error(
-          `Error getting balance for ${strategy.tokenAddress}:`,
-          error
-        );
         balances[new PublicKey(strategy.tokenAddress).toString()] = 0;
       }
     }
@@ -1029,13 +1032,22 @@ export default function LendingPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
               {filteredPools.map((pool) => {
-                const mintStr = new PublicKey(pool.token.mint).toString();
+                // Pour tous les pools SOL, toujours passer le solde natif
+                const solKey = "So11111111111111111111111111111111111111112";
+                const mintStr =
+                  pool.token.symbol === "SOL"
+                    ? solKey
+                    : new PublicKey(pool.token.mint).toString();
                 return (
                   <LendingPoolCard
                     key={pool.id}
                     pool={pool}
                     userConnected={connected}
-                    userTokenBalance={userTokenBalances[mintStr] || 0}
+                    userTokenBalance={
+                      userTokenBalances[
+                        pool.token.symbol === "SOL" ? solKey : mintStr
+                      ] || 0
+                    }
                     userBalances={userTokenBalances}
                     onDeposit={(amount) => handleDeposit(pool.id, amount)}
                     onWithdraw={(amount) => handleWithdraw(pool.id, amount)}

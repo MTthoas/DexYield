@@ -145,14 +145,20 @@ export const useLendingActions = () => {
       const { ytMint } = await getStrategyData(strategyAddress);
       
       // 1. Compte token de l'utilisateur
-      const userTokenAccounts = await connection.getTokenAccountsByOwner(
-        publicKey, 
-        { mint: tokenMint }
-      );
-      if (!userTokenAccounts.value.length) {
-        throw new Error(`Aucun compte ${tokenMint.toString()} trouvé pour ce wallet`);
+      let userTokenAccount: PublicKey;
+      if (tokenMint.toString() === "So11111111111111111111111111111111111111112") {
+        // Pour SOL natif, utiliser le wallet comme source
+        userTokenAccount = publicKey;
+      } else {
+        const userTokenAccounts = await connection.getTokenAccountsByOwner(
+          publicKey, 
+          { mint: tokenMint }
+        );
+        if (!userTokenAccounts.value.length) {
+          throw new Error(`Aucun compte ${tokenMint.toString()} trouvé pour ce wallet`);
+        }
+        userTokenAccount = userTokenAccounts.value[0].pubkey;
       }
-      const userTokenAccount = userTokenAccounts.value[0].pubkey;
 
       // 2. Compte YT de l'utilisateur (créer s'il n'existe pas)
       const ytMintAddress = new PublicKey(ytMint);
