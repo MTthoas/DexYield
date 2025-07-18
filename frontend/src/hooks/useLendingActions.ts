@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { useContracts } from './useContracts';
 import { LENDING_PROGRAM_ID } from '../lib/constants';
 
@@ -26,7 +26,43 @@ export const useLendingActions = () => {
     );
   }, []);
 
-  // Fonction pour récupérer la stratégie et obtenir le YT mint
+  // Fonction pour dériver le user deposit PDA basée sur la logique du script (sans pool)
+  const findUserDepositPDA = useCallback(async (user: PublicKey, strategy: PublicKey) => {
+    return await PublicKey.findProgramAddress(
+      [
+        Buffer.from("user_deposit"),
+        user.toBuffer(),
+        strategy.toBuffer(),
+      ],
+      LENDING_PROGRAM_ID
+    );
+  }, []);
+
+  // Fonction pour obtenir le programme Anchor directement
+  const getLendingProgram = useCallback(async () => {
+    if (!contractService) {
+      throw new Error('Contract service not available');
+    }
+
+    // Accéder au programme via les stratégies existantes (méthode indirecte)
+    const allStrategies = await contractService.getAllStrategies();
+    if (allStrategies.length === 0) {
+      throw new Error('No strategies found to get lending program');
+    }
+
+    // Créer le programme directement avec le bon provider
+    const { getLendingProgram, getProvider } = await import('../lib/contracts');
+    const { useWallet } = await import('@solana/wallet-adapter-react');
+    
+    // On utilise une méthode pour accéder au programme depuis le contractService
+    // Malheureusement, le lendingProgram est privé, donc on va contourner
+    const lendingProgram = (contractService as any).lendingProgram;
+    if (!lendingProgram) {
+      throw new Error('Lending program not available');
+    }
+    
+    return lendingProgram;
+  }, [contractService]);
   const getStrategyData = useCallback(async (strategyAddress: string) => {
     if (!contractService) {
       throw new Error('Contract service not available');
@@ -95,17 +131,38 @@ export const useLendingActions = () => {
       // 5. Conversion du montant avec les décimales
       const amountBN = new BN(amount * Math.pow(10, tokenDecimals));
 
-      // Utiliser la méthode deposit du contractService
-      const txId = await contractService.deposit(
-        publicKey,
-        publicKey, // poolOwner - utiliser l'utilisateur comme pool owner
-        strategyPubkey,
-        amountBN.toNumber(),
-        userTokenAccount,
-        userYtAccount,
-        vaultPda,
-        ytMintAddress
-      );
+      // 6. UserDeposit PDA (simplifié, basé sur le script)
+      const [userDepositPda] = await findUserDepositPDA(publicKey, strategyPubkey);
+
+      // Utiliser directement le programme Anchor avec la bonne signature de l'IDL
+      const lendingProgram = await getLendingProgram();
+      
+      console.log('📋 Comptes utilisés:', {
+        user: publicKey.toString(),
+        userDeposit: userDepositPda.toString(),
+        strategy: strategyPubkey.toString(),
+        userTokenAccount: userTokenAccount.toString(),
+        userYtAccount: userYtAccount.toString(),
+        tokenMint: tokenMint.toString(),
+        vaultAccount: vaultPda.toString(),
+        ytMint: ytMintAddress.toString(),
+      });
+
+      const txId = await lendingProgram.methods
+        .deposit(amountBN)
+        .accounts({
+          user: publicKey,
+          userDeposit: userDepositPda,
+          strategy: strategyPubkey,
+          userTokenAccount: userTokenAccount,
+          userYtAccount: userYtAccount,
+          tokenMint: tokenMint,  // ← Le compte manquant !
+          vaultAccount: vaultPda,
+          ytMint: ytMintAddress,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
 
       console.log("✅ Dépôt effectué avec succès !", txId);
       return txId;
@@ -163,17 +220,38 @@ export const useLendingActions = () => {
       // 5. Conversion du montant avec les décimales
       const amountBN = new BN(amount * Math.pow(10, tokenDecimals));
 
-      // Utiliser la méthode withdraw du contractService
-      const txId = await contractService.withdraw(
-        publicKey,
-        publicKey, // poolOwner - utiliser l'utilisateur comme pool owner
-        strategyPubkey,
-        amountBN.toNumber(),
-        userTokenAccount,
-        userYtAccount,
-        vaultPda,
-        ytMintAddress
-      );
+      // 6. UserDeposit PDA (simplifié, basé sur le script)
+      const [userDepositPda] = await findUserDepositPDA(publicKey, strategyPubkey);
+
+      // Utiliser directement le programme Anchor avec la bonne signature de l'IDL
+      const lendingProgram = await getLendingProgram();
+      
+      console.log('📋 Comptes utilisés pour withdraw:', {
+        user: publicKey.toString(),
+        userDeposit: userDepositPda.toString(),
+        strategy: strategyPubkey.toString(),
+        userTokenAccount: userTokenAccount.toString(),
+        userYtAccount: userYtAccount.toString(),
+        tokenMint: tokenMint.toString(),
+        vaultAccount: vaultPda.toString(),
+        ytMint: ytMintAddress.toString(),
+      });
+
+      const txId = await lendingProgram.methods
+        .withdraw(amountBN)
+        .accounts({
+          user: publicKey,
+          userDeposit: userDepositPda,
+          strategy: strategyPubkey,
+          userTokenAccount: userTokenAccount,
+          userYtAccount: userYtAccount,
+          tokenMint: tokenMint,  // ← Le compte manquant !
+          vaultAccount: vaultPda,
+          ytMint: ytMintAddress,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
 
       console.log("✅ Retrait effectué avec succès !", txId);
       return txId;
