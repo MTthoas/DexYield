@@ -311,14 +311,19 @@ export class ContractService {
 
     const [strategyPDA] = findStrategyPDA(tokenAddress, creator, strategyId);
 
+    // Create a new keypair for the token yield address (mint)
+    const tokenYieldKeypair = web3.Keypair.generate();
+
     return await this.lendingProgram.methods
-      .createStrategy(new BN(strategyId), new BN(rewardApy), name, description)
+      .createStrategy(new BN(strategyId), tokenAddress, new BN(rewardApy))
       .accounts({
         admin: creator,
         strategy: strategyPDA,
-        tokenAddress,
+        tokenYieldAddress: tokenYieldKeypair.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: web3.SystemProgram.programId,
       })
+      .signers([tokenYieldKeypair])
       .rpc();
   }
 
@@ -444,22 +449,28 @@ export class ContractService {
       throw new Error("createStrategy method not available on lending program");
     }
 
+    // Create a new keypair for the token yield address (mint)
+    const tokenYieldKeypair = web3.Keypair.generate();
+
     console.log("Creating strategy with multiple strategies per token support");
     console.log("Strategy PDA debug:", {
       tokenAddress: tokenAddress.toString(),
       admin: admin.toString(),
       strategyId,
       strategyPDA: strategyPDA.toString(),
+      tokenYieldAddress: tokenYieldKeypair.publicKey.toString(),
     });
 
     return await this.lendingProgram.methods
-      .createStrategy(new BN(strategyId), new BN(rewardApy), name, description)
+      .createStrategy(new BN(strategyId), tokenAddress, new BN(rewardApy))
       .accounts({
         admin,
         strategy: strategyPDA,
-        tokenAddress,
+        tokenYieldAddress: tokenYieldKeypair.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: web3.SystemProgram.programId,
       })
+      .signers([tokenYieldKeypair])
       .preInstructions([
         ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
         ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }),

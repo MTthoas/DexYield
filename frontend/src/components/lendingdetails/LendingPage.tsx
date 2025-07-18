@@ -118,7 +118,7 @@ const createPoolsFromStrategies = (
         decimals: tokenConfig?.decimals || 6,
         icon: `/images/tokens/${strategy.tokenSymbol?.toLowerCase?.()}.png`,
       },
-      apy: rewardApy / 100, // Convertir basis points en pourcentage
+      apy: rewardApy / 10000, // Convertir basis points en pourcentage (10000 basis points = 1%)
       tvl: tvl, // Toujours dynamique
       totalDeposits: tvlInTokens, // Toujours dynamique
       totalYieldDistributed: tvlInTokens * 0.05, // 5% de yield distribué comme exemple
@@ -939,7 +939,7 @@ export default function LendingPage() {
                           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                             <span>Token: {strategy.tokenSymbol}</span>
                             <span>
-                              APY: {(strategy.rewardApy / 100).toFixed(2)}%
+                              APY: {(strategy.rewardApy / 10000).toFixed(2)}%
                             </span>
                             <span>ID: {strategy.strategyId}</span>
                           </div>

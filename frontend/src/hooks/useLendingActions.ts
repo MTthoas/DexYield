@@ -1,13 +1,13 @@
 import { useState, useCallback } from 'react';
-import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, getAccount } from '@solana/spl-token';
 import { useContracts } from './useContracts';
 import { LENDING_PROGRAM_ID } from '../lib/constants';
 
 export const useLendingActions = () => {
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
   const contractService = useContracts();
 
@@ -63,6 +63,41 @@ export const useLendingActions = () => {
     
     return lendingProgram;
   }, [contractService]);
+  // Fonction pour s'assurer que le compte YT existe
+  const ensureYtAccountExists = useCallback(async (ytMint: PublicKey, userPublicKey: PublicKey) => {
+    const userYtAccount = await getAssociatedTokenAddress(ytMint, userPublicKey);
+    
+    try {
+      // Vérifier si le compte existe déjà
+      await getAccount(connection, userYtAccount);
+      console.log('✅ Compte YT existe déjà:', userYtAccount.toString());
+      return userYtAccount;
+    } catch (error) {
+      // Le compte n'existe pas, il faut le créer
+      console.log('🔨 Création du compte YT:', userYtAccount.toString());
+      
+      const transaction = new Transaction().add(
+        createAssociatedTokenAccountInstruction(
+          userPublicKey, // payer
+          userYtAccount, // associatedToken
+          userPublicKey, // owner
+          ytMint // mint
+        )
+      );
+
+      // Envoyer la transaction pour créer le compte
+      if (!sendTransaction) {
+        throw new Error('Wallet sendTransaction not available');
+      }
+
+      const signature = await sendTransaction(transaction, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      
+      console.log('✅ Compte YT créé avec succès:', signature);
+      return userYtAccount;
+    }
+  }, [connection, sendTransaction]);
+
   const getStrategyData = useCallback(async (strategyAddress: string) => {
     if (!contractService) {
       throw new Error('Contract service not available');
@@ -119,14 +154,12 @@ export const useLendingActions = () => {
       }
       const userTokenAccount = userTokenAccounts.value[0].pubkey;
 
-      // 2. Compte YT de l'utilisateur
-      const userYtAccount = await getAssociatedTokenAddress(new PublicKey(ytMint), publicKey);
+      // 2. Compte YT de l'utilisateur (créer s'il n'existe pas)
+      const ytMintAddress = new PublicKey(ytMint);
+      const userYtAccount = await ensureYtAccountExists(ytMintAddress, publicKey);
 
       // 3. Vault PDA
       const [vaultPda] = await findVaultPDA(tokenMint, strategyId);
-
-      // 4. YT mint address
-      const ytMintAddress = new PublicKey(ytMint);
 
       // 5. Conversion du montant avec les décimales
       const amountBN = new BN(amount * Math.pow(10, tokenDecimals));
@@ -174,7 +207,7 @@ export const useLendingActions = () => {
     } finally {
       setLoading(false);
     }
-  }, [contractService, publicKey, connection, findVaultPDA, getStrategyData]);
+  }, [contractService, publicKey, connection, findVaultPDA, getStrategyData, ensureYtAccountExists]);
 
   // Fonction withdraw simplifiée basée sur fetch-all-strategies.js
   const withdraw = useCallback(async (
@@ -208,14 +241,12 @@ export const useLendingActions = () => {
       }
       const userTokenAccount = userTokenAccounts.value[0].pubkey;
 
-      // 2. Compte YT de l'utilisateur
-      const userYtAccount = await getAssociatedTokenAddress(new PublicKey(ytMint), publicKey);
+      // 2. Compte YT de l'utilisateur (s'assurer qu'il existe)
+      const ytMintAddress = new PublicKey(ytMint);
+      const userYtAccount = await ensureYtAccountExists(ytMintAddress, publicKey);
 
       // 3. Vault PDA
       const [vaultPda] = await findVaultPDA(tokenMint, strategyId);
-
-      // 4. YT mint address
-      const ytMintAddress = new PublicKey(ytMint);
 
       // 5. Conversion du montant avec les décimales
       const amountBN = new BN(amount * Math.pow(10, tokenDecimals));
@@ -263,7 +294,7 @@ export const useLendingActions = () => {
     } finally {
       setLoading(false);
     }
-  }, [contractService, publicKey, connection, findVaultPDA, getStrategyData]);
+  }, [contractService, publicKey, connection, findVaultPDA, getStrategyData, ensureYtAccountExists]);
 
   return {
     deposit,

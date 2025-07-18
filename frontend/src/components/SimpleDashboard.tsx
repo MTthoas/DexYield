@@ -304,7 +304,7 @@ export function SimpleDashboard() {
                             {strategy.name}
                           </div>
                           <div className="text-sm text-white/60">
-                            {strategy.tokenSymbol} • {(strategy.rewardApy / 100).toFixed(2)}% APY
+                            {strategy.tokenSymbol} • {(strategy.rewardApy / 10000).toFixed(2)}% APY
                           </div>
                         </div>
                       </div>

@@ -162,7 +162,7 @@ export const mockLendingPools: MockLendingPool[] = mockStrategies.map((strategy)
       decimals: decimals,
       icon: `/images/tokens/${strategy.tokenSymbol.toLowerCase()}.png`
     },
-    apy: strategy.rewardApy / 100,
+    apy: strategy.rewardApy / 10000,
     tvl: tvl,
     totalDeposits: totalDeposits,
     totalYieldDistributed: totalDeposits * (strategy.rewardApy / 10000) * 0.1,

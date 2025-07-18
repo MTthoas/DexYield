@@ -243,7 +243,7 @@ export const MockAdminPage: React.FC = () => {
                       <p className="text-sm text-gray-600">{strategy.description}</p>
                       <div className="flex items-center space-x-2 mt-2">
                         <Badge variant="secondary">{strategy.tokenSymbol}</Badge>
-                        <Badge variant="outline">{(strategy.rewardApy / 100).toFixed(1)}% APY</Badge>
+                        <Badge variant="outline">{(strategy.rewardApy / 10000).toFixed(1)}% APY</Badge>
                       </div>
                     </div>
                     <div className="text-right">

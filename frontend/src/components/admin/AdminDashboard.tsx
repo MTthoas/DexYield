@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Plus, Eye, Settings } from "lucide-react";
+import { Shield, Plus, Eye, RefreshCw } from "lucide-react";
 import { useLending } from "@/hooks/useLending";
 import { useLendingSimplified } from "@/hooks/useLendingSimplified";
 import { USDC_MINT, SOL_MINT } from "@/lib/constants";
@@ -53,7 +53,9 @@ export function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'create' | 'manage'>('overview');
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'create'>('overview');
   
   const [form, setForm] = useState<CreateStrategyForm>({
     tokenMint: '',
@@ -83,8 +85,28 @@ export function AdminDashboard() {
   // Charger les stratégies
   useEffect(() => {
     if (isAdmin) {
-      fetchStrategies();
+      fetchStrategies().then(() => setLastUpdate(new Date()));
     }
+  }, [isAdmin, fetchStrategies]);
+
+  // Rafraîchissement automatique des données toutes les 30 secondes
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const refreshData = async () => {
+      setRefreshing(true);
+      try {
+        await fetchStrategies();
+        setLastUpdate(new Date());
+      } catch (error) {
+        console.error('Error refreshing strategies:', error);
+      } finally {
+        setRefreshing(false);
+      }
+    };
+
+    const interval = setInterval(refreshData, 30000); // 30 secondes
+    return () => clearInterval(interval);
   }, [isAdmin, fetchStrategies]);
 
   // Gérer la création de stratégie
@@ -111,7 +133,7 @@ export function AdminDashboard() {
     setCreateLoading(true);
     try {
       const tokenMint = new PublicKey(form.tokenMint);
-      const rewardApyNumber = Math.floor(apyValue * 1000); // Convert to basis points (5% = 5000 basis points)
+      const rewardApyNumber = Math.floor(apyValue * 10000); // Convert to basis points (5% = 50000 basis points)
       
       console.log('Creating strategy:', {
         tokenMint: tokenMint.toString(),
@@ -142,6 +164,7 @@ export function AdminDashboard() {
       
       // Refresh strategies
       await fetchStrategies();
+      setLastUpdate(new Date());
       
     } catch (error) {
       console.error('Error creating strategy:', error);
@@ -179,11 +202,25 @@ export function AdminDashboard() {
 
       // Recharger les stratégies
       await fetchStrategies();
+      setLastUpdate(new Date());
     } catch (error) {
       console.error('Erreur lors du toggle de la stratégie:', error);
       alert('Erreur lors de la modification du statut de la stratégie');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fonction de rafraîchissement manuel
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchStrategies();
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Error refreshing strategies:', error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -232,9 +269,16 @@ export function AdminDashboard() {
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Shield className="w-8 h-8 text-green-500" />
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <Shield className="w-8 h-8 text-green-500" />
+              <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+            </div>
+            {lastUpdate && (
+              <div className="text-sm text-muted-foreground">
+                Dernière mise à jour: {lastUpdate.toLocaleTimeString('fr-FR')}
+              </div>
+            )}
           </div>
           <p className="text-muted-foreground">
             Gestion des stratégies DexYield - {publicKey.toBase58()}
@@ -266,64 +310,209 @@ export function AdminDashboard() {
               <Plus className="w-4 h-4 inline mr-2" />
               Créer une stratégie
             </button>
-            <button
-              onClick={() => setActiveTab('manage')}
-              className={`px-4 py-2 font-medium transition-colors ${
-                activeTab === 'manage'
-                  ? 'border-b-2 border-primary text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Settings className="w-4 h-4 inline mr-2" />
-              Gérer les stratégies
-            </button>
           </div>
         </div>
 
         {/* Content */}
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Stratégies Actives</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-500">
-                  {strategies.filter(s => s.active).length}
+          <div className="space-y-8">
+            {/* Statistics Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="transition-all hover:shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    Stratégies Actives
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-green-500">
+                    {refreshing ? (
+                      <div className="w-8 h-8 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
+                    ) : (
+                      strategies.filter(s => s.active).length
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Stratégies en cours d'exécution
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="transition-all hover:shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-lg">Total Stratégies</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-blue-500">
+                    {refreshing ? (
+                      <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+                    ) : (
+                      strategies.length
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Toutes les stratégies créées
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="transition-all hover:shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-lg">Tokens Supportés</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-purple-500">
+                    {AVAILABLE_TOKENS.length}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    USDC, SOL disponibles
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="transition-all hover:shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-lg">Total Déposé</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-yellow-500">
+                    {refreshing ? (
+                      <div className="w-8 h-8 border-2 border-yellow-500/30 border-t-yellow-500 rounded-full animate-spin" />
+                    ) : (
+                      new Intl.NumberFormat('fr-FR', {
+                        style: 'decimal',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2
+                      }).format(strategies.reduce((sum, s) => sum + (s.totalDeposited || 0), 0))
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Somme de tous les dépôts
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Strategies Management */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold">Stratégies Existantes</h2>
+                <div className="flex items-center gap-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    {refreshing ? 'Actualisation...' : 'Actualiser'}
+                  </Button>
+                  <div className="text-sm text-muted-foreground">
+                    Triées de la plus récente à la plus ancienne
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Stratégies en cours d'exécution
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Total Stratégies</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-500">
-                  {strategies.length}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Toutes les stratégies créées
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Tokens Supportés</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-purple-500">
-                  {AVAILABLE_TOKENS.length}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  USDC, SOL disponibles
-                </p>
-              </CardContent>
-            </Card>
+              </div>
+              
+              {strategies.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <p className="text-muted-foreground">Aucune stratégie créée pour le moment.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                strategies
+                  .sort((a, b) => b.createdAt - a.createdAt) // Tri par date décroissante
+                  .map((strategy, index) => (
+                    <Card 
+                      key={strategy.id}
+                      className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] border-l-4 border-l-transparent hover:border-l-primary animate-in fade-in slide-in-from-bottom-4"
+                      style={{
+                        animationDelay: `${index * 100}ms`
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-lg">{strategy.name}</CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              {strategy.description}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              strategy.active 
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' 
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300'
+                            }`}>
+                              {strategy.active ? 'Actif' : 'Inactif'}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant={strategy.active ? "destructive" : "default"}
+                              onClick={() => handleToggleStrategy(strategy)}
+                              disabled={loading}
+                              className={strategy.active 
+                                ? "bg-red-600 hover:bg-red-700 text-white" 
+                                : "bg-green-600 hover:bg-green-700 text-white"
+                              }
+                            >
+                              {loading ? (
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              ) : strategy.active ? (
+                                "Désactiver"
+                              ) : (
+                                "Activer"
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                          <div>
+                            <p className="text-sm font-medium">Token</p>
+                            <p className="text-sm text-muted-foreground">{strategy.tokenSymbol}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">ID Stratégie</p>
+                            <p className="text-sm text-muted-foreground">#{strategy.strategyId}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">APY</p>
+                            <p className="text-sm text-muted-foreground font-mono text-green-600">
+                              {(strategy.rewardApy / 10000).toFixed(1)}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">Total Déposé</p>
+                            <p className="text-sm text-muted-foreground font-mono">
+                              {new Intl.NumberFormat('fr-FR', {
+                                style: 'decimal',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 2
+                              }).format(strategy.totalDeposited || 0)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">Créée le</p>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(strategy.createdAt * 1000).toLocaleDateString('fr-FR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+              )}
+            </div>
           </div>
         )}
 
@@ -408,83 +597,6 @@ export function AdminDashboard() {
               </Button>
             </CardContent>
           </Card>
-        )}
-
-        {activeTab === 'manage' && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold mb-4">Stratégies Existantes</h2>
-            {strategies.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <p className="text-muted-foreground">Aucune stratégie créée pour le moment.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              strategies.map((strategy) => (
-                <Card key={strategy.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{strategy.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                          {strategy.description}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          strategy.active 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {strategy.active ? 'Actif' : 'Inactif'}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant={strategy.active ? "destructive" : "default"}
-                          onClick={() => handleToggleStrategy(strategy)}
-                          disabled={loading}
-                          className={strategy.active 
-                            ? "bg-red-600 hover:bg-red-700 text-white" 
-                            : "bg-green-600 hover:bg-green-700 text-white"
-                          }
-                        >
-                          {loading ? (
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          ) : strategy.active ? (
-                            "Désactiver"
-                          ) : (
-                            "Activer"
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-sm font-medium">Token</p>
-                        <p className="text-sm text-muted-foreground">{strategy.tokenSymbol}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">APY</p>
-                        <p className="text-sm text-muted-foreground">{(strategy.rewardApy / 100).toFixed(1)}%</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Total Déposé</p>
-                        <p className="text-sm text-muted-foreground">{strategy.totalDeposited}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Créée le</p>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(strategy.createdAt * 1000).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
         )}
       </div>
     </div>
