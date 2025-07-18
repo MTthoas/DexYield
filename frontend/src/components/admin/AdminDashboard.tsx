@@ -373,7 +373,7 @@ export function AdminDashboard() {
 
               <Card className="transition-all hover:shadow-lg">
                 <CardHeader>
-                  <CardTitle className="text-lg">Total Déposé</CardTitle>
+                  <CardTitle className="text-lg">TVL Total</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-yellow-500">
@@ -384,11 +384,11 @@ export function AdminDashboard() {
                         style: 'decimal',
                         minimumFractionDigits: 0,
                         maximumFractionDigits: 2
-                      }).format(strategies.reduce((sum, s) => sum + (s.totalDeposited || 0), 0))
+                      }).format(strategies.reduce((sum, s) => sum + (s.vaultBalance || 0), 0))
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Somme de tous les dépôts
+                    Total Value Locked dans tous les pools
                   </p>
                 </CardContent>
               </Card>
@@ -492,7 +492,7 @@ export function AdminDashboard() {
                                 style: 'decimal',
                                 minimumFractionDigits: 0,
                                 maximumFractionDigits: 2
-                              }).format(strategy.totalDeposited || 0)}
+                              }).format(strategy.vaultBalance || 0)} {strategy.tokenSymbol}
                             </p>
                           </div>
                           <div>
