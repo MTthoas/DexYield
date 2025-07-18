@@ -429,7 +429,7 @@ export default function LendingPage() {
       loadPoolsData().finally(() => {
         loadingRef.current = false;
       });
-    }, 100); // Délai de 100ms
+    }, 1000); // Délai augmenté à 1000ms (1s) pour laisser le temps à la transaction d'être confirmée
 
     return () => {
       if (timeoutRef.current) {
