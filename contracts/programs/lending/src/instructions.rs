@@ -1,3 +1,4 @@
+// Importation des modules Anchor nécessaires
 use anchor_lang::prelude::*;
 use anchor_spl::token::{
     burn, mint_to, transfer, Burn, MintTo, Transfer,
@@ -5,15 +6,18 @@ use anchor_spl::token::{
 use crate::account_structs::*;
 use crate::error::ErrorCode;
 
-const MIN_DEPOSIT: u64 = 1_000_000; // 1 USDC minimum
+// Montant minimum de dépôt (1 USDC)
+const MIN_DEPOSIT: u64 = 1_000_000;
 
+/// Initialise le compte de dépôt utilisateur pour une stratégie donnée
 pub fn initialize_user_deposit(ctx: Context<InitializeUserDeposit>) -> Result<()> {
     let user_deposit = &mut ctx.accounts.user_deposit;
     let clock = Clock::get()?;
 
-    // Vérifier que la stratégie est active
+    // Vérifie que la stratégie est active
     require!(ctx.accounts.strategy.active, ErrorCode::InvalidStrategy);
 
+    // Initialise les champs du compte de dépôt utilisateur
     user_deposit.user = ctx.accounts.user.key();
     user_deposit.strategy = ctx.accounts.strategy.key();
     user_deposit.amount = 0;
@@ -21,6 +25,7 @@ pub fn initialize_user_deposit(ctx: Context<InitializeUserDeposit>) -> Result<()
     user_deposit.deposit_time = clock.unix_timestamp;
     user_deposit.last_yield_calculation = clock.unix_timestamp;
 
+    // Log d'initialisation
     msg!(
         "User deposit account initialized for user: {}",
         ctx.accounts.user.key()
@@ -28,13 +33,15 @@ pub fn initialize_user_deposit(ctx: Context<InitializeUserDeposit>) -> Result<()
     Ok(())
 }
 
+/// Permet à l'utilisateur de déposer des tokens dans une stratégie
 pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+    // Vérifie le montant minimum et que la stratégie est active
     require!(amount >= MIN_DEPOSIT, ErrorCode::InsufficientDepositAmount);
     require!(ctx.accounts.strategy.active, ErrorCode::InvalidStrategy);
 
     let user_deposit = &mut ctx.accounts.user_deposit;
 
-    // Initialiser le compte si c'est la première fois
+    // Initialise le compte de dépôt si c'est la première fois
     if user_deposit.user == Pubkey::default() {
         let current_time = Clock::get()?.unix_timestamp;
         user_deposit.user = ctx.accounts.user.key();
@@ -52,7 +59,7 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         ErrorCode::InvalidStrategy
     );
 
-    // Calcule le yield accumulé avant d'ajouter le nouveau dépôt
+    // Calcule le rendement accumulé avant d'ajouter le nouveau dépôt
     let current_time = Clock::get()?.unix_timestamp;
     let time_elapsed = current_time - user_deposit.last_yield_calculation;
     if time_elapsed > 0 && user_deposit.amount > 0 {
@@ -62,7 +69,7 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
             .ok_or(ErrorCode::CalculationError)?
             .checked_mul(time_elapsed as u64)
             .ok_or(ErrorCode::CalculationError)?
-            / (31536000 * 10000); // 31536000 = secondes dans une année
+            / (31536000 * 10000); // Conversion annuelle
 
         user_deposit.yield_earned = user_deposit
             .yield_earned
@@ -89,7 +96,7 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     user_deposit.deposit_time = current_time;
     user_deposit.last_yield_calculation = current_time;
 
-    // Mise à jour des totaux de la stratégie
+    // Mise à jour du total déposé dans la stratégie
     ctx.accounts.strategy.total_deposited = ctx
         .accounts
         .strategy
@@ -97,7 +104,7 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         .checked_add(amount)
         .ok_or(ErrorCode::CalculationError)?;
 
-    // Mint des YT tokens avec la stratégie comme autorité
+    // Mint des YT tokens pour l'utilisateur
     let strategy_seeds = &[
         b"strategy",
         ctx.accounts.strategy.token_address.as_ref(),
@@ -118,6 +125,7 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     );
     mint_to(mint_ctx, amount)?;
 
+    // Log du dépôt
     msg!(
         "Deposited {} tokens for user: {}",
         amount,
@@ -126,16 +134,19 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     Ok(())
 }
 
+/// Permet à l'utilisateur de retirer des tokens de la stratégie
 pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+    // Vérifie que la stratégie est active et le montant > 0
     require!(ctx.accounts.strategy.active, ErrorCode::InvalidStrategy);
     require!(amount > 0, ErrorCode::InvalidAmount);
 
     let user_deposit = &mut ctx.accounts.user_deposit;
     let strategy = &ctx.accounts.strategy;
 
+    // Vérifie que l'utilisateur a assez de fonds
     require!(user_deposit.amount >= amount, ErrorCode::InsufficientFunds);
 
-    // Calcule le yield accumulé avant le retrait
+    // Calcule le rendement accumulé avant le retrait
     let current_time = Clock::get()?.unix_timestamp;
     let time_elapsed = current_time - user_deposit.last_yield_calculation;
     if time_elapsed > 0 {
@@ -145,7 +156,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
             .ok_or(ErrorCode::CalculationError)?
             .checked_mul(time_elapsed as u64)
             .ok_or(ErrorCode::CalculationError)?
-            / (31536000 * 10000); // 31536000 = secondes dans une année
+            / (31536000 * 10000);
 
         user_deposit.yield_earned = user_deposit
             .yield_earned
@@ -153,7 +164,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
             .ok_or(ErrorCode::CalculationError)?;
     }
 
-    // Transfert depuis le vault vers l'utilisateur avec la stratégie comme autorité
+    // Transfert du vault vers l'utilisateur
     let strategy_seeds = &[
         b"strategy",
         strategy.token_address.as_ref(),
@@ -195,10 +206,12 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     Ok(())
 }
 
+/// Retourne le solde du dépôt utilisateur
 pub fn get_user_balance(ctx: Context<GetUserBalance>) -> Result<u64> {
     Ok(ctx.accounts.user_deposit.amount)
 }
 
+/// Calcule le rendement en attente pour l'utilisateur
 pub fn calculate_pending_yield(ctx: Context<CalculatePendingYield>) -> Result<u64> {
     let user_deposit = &ctx.accounts.user_deposit;
     let strategy = &ctx.accounts.strategy;
@@ -215,7 +228,7 @@ pub fn calculate_pending_yield(ctx: Context<CalculatePendingYield>) -> Result<u6
         .ok_or(ErrorCode::CalculationError)?
         .checked_mul(time_elapsed as u64)
         .ok_or(ErrorCode::CalculationError)?
-        / (31536000 * 10000); // 31536000 = secondes dans une année
+        / (31536000 * 10000);
 
     Ok(user_deposit
         .yield_earned
@@ -223,13 +236,15 @@ pub fn calculate_pending_yield(ctx: Context<CalculatePendingYield>) -> Result<u6
         .ok_or(ErrorCode::CalculationError)?)
 }
 
+/// Permet à l'utilisateur de retirer ses fonds et le rendement associé
 pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
+    // Vérifie que la stratégie est active et le montant > 0
     require!(ctx.accounts.strategy.active, ErrorCode::InvalidStrategy);
     require!(yt_amount > 0, ErrorCode::InvalidAmount);
 
     let user_deposit = &mut ctx.accounts.user_deposit;
     let current_time = Clock::get()?.unix_timestamp;
-    let min_duration: i64 = 60; // 1 minute pour POC
+    let min_duration: i64 = 60; // Durée minimale avant retrait (POC)
 
     // Vérifie que la stratégie passée correspond à celle du dépôt
     require_keys_eq!(
@@ -244,11 +259,12 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
         ErrorCode::InsufficientYieldTokens
     );
 
+    // Vérifie la durée minimale de dépôt
     if current_time - user_deposit.deposit_time < min_duration {
         return Err(ErrorCode::TooEarlyToRedeem.into());
     }
 
-    // Calcule le yield accumulé total
+    // Calcule le rendement total accumulé
     let time_elapsed = current_time - user_deposit.last_yield_calculation;
     let mut total_yield_earned = user_deposit.yield_earned;
 
@@ -259,7 +275,7 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
             .ok_or(ErrorCode::CalculationError)?
             .checked_mul(time_elapsed as u64)
             .ok_or(ErrorCode::CalculationError)?
-            / (31536000 * 10000); // 31536000 = secondes dans une année
+            / (31536000 * 10000);
 
         total_yield_earned = total_yield_earned
             .checked_add(pending_yield)
@@ -277,7 +293,7 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
     );
     burn(burn_ctx, yt_amount)?;
 
-    // Calcule le montant à transférer : principal + yield proportionnel
+    // Calcule le montant à transférer : principal + rendement proportionnel
     let yield_ratio = if user_deposit.amount > 0 {
         yt_amount
             .checked_mul(10000)
@@ -287,7 +303,7 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
         10000 // 100% si pas de dépôt restant
     };
 
-    let principal_amount = yt_amount; // 1:1 ratio with original deposit
+    let principal_amount = yt_amount; // Ratio 1:1 avec le dépôt initial
     let yield_amount = total_yield_earned
         .checked_mul(yield_ratio)
         .ok_or(ErrorCode::CalculationError)?
@@ -297,7 +313,7 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
         .checked_add(yield_amount)
         .ok_or(ErrorCode::CalculationError)?;
 
-    // Transfert du vault vers l'utilisateur avec la stratégie comme autorité
+    // Transfert du vault vers l'utilisateur
     let strategy_seeds = &[
         b"strategy",
         ctx.accounts.strategy.token_address.as_ref(),
@@ -318,7 +334,7 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
     );
     transfer(transfer_ctx, total_redeem_amount)?;
 
-    // Met à jour les comptes
+    // Mise à jour des comptes utilisateur
     user_deposit.amount = user_deposit
         .amount
         .checked_sub(principal_amount)
@@ -331,12 +347,14 @@ pub fn redeem(ctx: Context<Redeem>, yt_amount: u64) -> Result<()> {
     Ok(())
 }
 
+/// Crée une nouvelle stratégie de rendement
 pub fn create_strategy(
     ctx: Context<CreateStrategy>,
     strategy_id: u64,
     token_address: Pubkey,
     reward_apy: u64,
 ) -> Result<()> {
+    // Vérifie que l'APY est dans les limites
     require!(reward_apy <= 100_000, ErrorCode::InvalidAPY);
     require!(reward_apy >= 100, ErrorCode::InvalidAPY); // Minimum 0.01%
 
@@ -352,21 +370,23 @@ pub fn create_strategy(
     Ok(())
 }
 
+/// Active ou désactive une stratégie
 pub fn toggle_strategy_status(ctx: Context<ToggleStrategyStatus>, _strategy_id: u64) -> Result<()> {
     let strategy = &mut ctx.accounts.strategy;
     strategy.active = !strategy.active;
     Ok(())
 }
 
+/// Réinitialise le rendement accumulé pour l'utilisateur
 pub fn reset_user_yield(ctx: Context<ResetUserYield>) -> Result<()> {
     let user_deposit = &mut ctx.accounts.user_deposit;
     let current_time = Clock::get()?.unix_timestamp;
 
-    // Réinitialiser le yield accumulé à 0
+    // Remet le rendement à zéro et met à jour le timestamp
     user_deposit.yield_earned = 0;
-    // Réinitialiser le timestamp de dernière calculation
     user_deposit.last_yield_calculation = current_time;
 
+    // Log de reset
     msg!("Reset yield for user: {}", ctx.accounts.user.key());
     Ok(())
 }
