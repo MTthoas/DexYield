@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { AlertCircle, Search } from "lucide-react";
+import { AlertCircle, Search, RefreshCw } from "lucide-react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useLending } from "@/hooks/useLending";
@@ -571,8 +571,12 @@ export default function LendingPage() {
         if (!strategy) throw new Error("Strategy not found");
 
         const tokenMint = new PublicKey(strategy.tokenAddress);
-        // Use DEFAULT_POOL_OWNER as all deposits are in the shared pool
-        await withdraw(tokenMint, amount, strategy.strategyId, strategy.id);
+        const tokenDecimals =
+          TOKEN_DECIMALS[strategy.tokenSymbol as keyof typeof TOKEN_DECIMALS] ||
+          6;
+
+        // Corriger l'ordre des paramètres : (strategyAddress, tokenMint, strategyId, amount, tokenDecimals)
+        await withdraw(strategy.id, tokenMint, strategy.strategyId, amount, tokenDecimals);
         toast.success(
           `Successfully withdrew ${amount} ${strategy.tokenSymbol}`
         );
@@ -595,6 +599,31 @@ export default function LendingPage() {
       loadUserBalances,
     ]
   );
+
+  // Handle refresh data manually
+  const handleRefresh = useCallback(async () => {
+    if (!connected || !publicKey) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Reset loading flags
+      loadingRef.current = false;
+      
+      // Reload both pools data and user balances
+      await Promise.all([
+        loadPoolsData(),
+        loadUserBalances()
+      ]);
+      
+      console.log("Data refreshed successfully");
+    } catch (error) {
+      console.error("Refresh error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [connected, publicKey, loadPoolsData, loadUserBalances]);
 
   // Handle toggle strategy status
   const handleToggleStrategy = useCallback(
@@ -882,6 +911,16 @@ export default function LendingPage() {
                 {showAdminPanel ? "Hide Admin" : "Manage Strategies"}
               </Button>
             )}
+            <Button
+              onClick={handleRefresh}
+              variant="outline"
+              size="sm"
+              disabled={isLoading}
+              className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Actualisation...' : 'Actualiser'}
+            </Button>
           </div>
         </div>
       </section>

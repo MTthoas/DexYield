@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -20,6 +20,7 @@ interface LendingPool {
   totalYieldDistributed: number;
   userDeposit?: number;
   userYieldEarned?: number;
+  userDepositTime?: number;
   isActive: boolean;
   description: string;
   riskLevel: "Low" | "Medium" | "High";
@@ -93,8 +94,17 @@ export function LendingPoolCard({
     }
   };
 
-  const handleAction = async () => {
+    const handleAction = async () => {
     if (!amount || parseFloat(amount) <= 0) return;
+
+    // Vérifier le montant minimum pour les dépôts
+    if (mode === "deposit") {
+      const minDeposit = 1; // 1 token minimum requis par le smart contract
+      if (parseFloat(amount) < minDeposit) {
+        alert(`Minimum deposit amount is ${minDeposit} ${pool.token.symbol}`);
+        return;
+      }
+    }
 
     setActionLoading(true);
     try {
@@ -222,61 +232,173 @@ export function LendingPoolCard({
           <pre>{JSON.stringify(pool, null, 2)}</pre>
         </details>
 
-        {/* Position utilisateur si connecté */}
-        {userConnected &&
-          (pool.userDeposit !== undefined ||
-            pool.userYieldEarned !== undefined) && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-blue-300 text-sm font-medium">
-                  Your Position
+        {/* Section spéciale pour claim uniquement (si yield sans dépôts actifs) */}
+        {userConnected && 
+         pool.userYieldEarned !== undefined && 
+         pool.userYieldEarned > 0 && 
+         (pool.userDeposit === undefined || pool.userDeposit <= 0) && (
+          <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-green-300 text-sm font-medium">
+                  🎯 Yield Tokens Ready
                 </span>
-                {pool.userYieldEarned !== undefined &&
-                  pool.userYieldEarned > 0 && (
-                    <div className="flex flex-col items-end gap-1">
-                      <Button
-                        onClick={() => onRedeem(pool.id)}
-                        disabled={actionLoading || !claimStatus.available}
-                        size="sm"
-                        className={`h-6 px-2 text-xs ${
-                          claimStatus.available
-                            ? "bg-green-500/20 hover:bg-green-500/30 text-green-300 border-green-500/30"
-                            : "bg-yellow-500/20 text-yellow-300 border-yellow-500/30 cursor-not-allowed"
-                        }`}
-                        title={
-                          !claimStatus.available
-                            ? `Available in ${formatTimeRemaining(claimStatus.timeRemaining)}`
-                            : "Claim your yield tokens"
-                        }
-                      >
-                        {claimStatus.available ? "Claim" : "Locked"}
-                      </Button>
-                      {!claimStatus.available &&
-                        claimStatus.timeRemaining > 0 && (
-                          <span className="text-yellow-300 text-xs opacity-80">
-                            {formatTimeRemaining(claimStatus.timeRemaining)}
-                          </span>
-                        )}
+                <span className="text-green-400 font-bold text-lg">
+                  {formatNumber(pool.userYieldEarned)} YT-{pool.token.symbol}
+                </span>
+                <span className="text-green-400/70 text-xs">
+                  Withdraw your earned yield tokens
+                </span>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <Button
+                  onClick={() => onRedeem(pool.id)}
+                  disabled={actionLoading || !claimStatus.available}
+                  className={`px-6 py-3 font-medium ${
+                    claimStatus.available
+                      ? "bg-green-500/30 hover:bg-green-500/40 text-green-300 border border-green-500/40"
+                      : "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 cursor-not-allowed"
+                  }`}
+                  title={
+                    !claimStatus.available
+                      ? `Available in ${formatTimeRemaining(claimStatus.timeRemaining)}`
+                      : "Claim your yield tokens"
+                  }
+                >
+                  {actionLoading ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin"></div>
+                      <span>Claiming...</span>
                     </div>
+                  ) : claimStatus.available ? (
+                    "🎁 Claim All Yield"
+                  ) : (
+                    "🔒 Locked"
                   )}
+                </Button>
+                {!claimStatus.available && claimStatus.timeRemaining > 0 && (
+                  <span className="text-yellow-300 text-xs opacity-80">
+                    Available in {formatTimeRemaining(claimStatus.timeRemaining)}
+                  </span>
+                )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Position utilisateur si connecté et qu'il a des tokens */}
+        {userConnected && 
+         ((pool.userDeposit !== undefined && pool.userDeposit > 0) || 
+          (pool.userYieldEarned !== undefined && pool.userYieldEarned > 0)) && (
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-blue-300 text-sm font-medium">
+                Your Position
+              </span>
+            </div>
+            
+            {/* Dépôts de l'utilisateur */}
+            <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-white/70">Locked Tokens</span>
+                <span className="text-white/70">My Deposits</span>
                 <span className="text-white font-medium">
-                  {formatNumber(pool.userDeposit)} {pool.token.symbol}
+                  {pool.userDeposit !== undefined && pool.userDeposit > 0
+                    ? `${formatNumber(pool.userDeposit)} ${pool.token.symbol}`
+                    : "No deposits"}
                 </span>
               </div>
+              
               {pool.userYieldEarned !== undefined &&
                 pool.userYieldEarned > 0 && (
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-white/70">Earned</span>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-white/70">Yield Earned</span>
                     <span className="text-green-400 font-medium">
                       +{formatNumber(pool.userYieldEarned)} {pool.token.symbol}
                     </span>
                   </div>
                 )}
+              
+              {pool.userDeposit !== undefined && pool.userDeposit > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/70">Total Value</span>
+                  <span className="text-blue-300 font-medium">
+                    {formatNumber((pool.userDeposit || 0) + (pool.userYieldEarned || 0))} {pool.token.symbol}
+                  </span>
+                </div>
+              )}
+              
+              {pool.userDepositTime && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/70">Deposited</span>
+                  <span className="text-white/60 text-xs">
+                    {new Date(pool.userDepositTime * 1000).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
             </div>
-          )}
+            
+            {/* Section Claim YTokens */}
+            {pool.userYieldEarned !== undefined && pool.userYieldEarned > 0 && (
+              <div className="mt-4 pt-3 border-t border-blue-500/20">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-col">
+                    <span className="text-green-300 text-sm font-medium">
+                      🎯 Yield Tokens Available
+                    </span>
+                    <span className="text-green-400 font-bold">
+                      {formatNumber(pool.userYieldEarned)} YT-{pool.token.symbol}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <Button
+                      onClick={() => onRedeem(pool.id)}
+                      disabled={actionLoading || !claimStatus.available}
+                      size="sm"
+                      className={`px-4 py-2 text-sm font-medium ${
+                        claimStatus.available
+                          ? "bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30"
+                          : "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 cursor-not-allowed"
+                      }`}
+                      title={
+                        !claimStatus.available
+                          ? `Available in ${formatTimeRemaining(claimStatus.timeRemaining)}`
+                          : "Claim your yield tokens"
+                      }
+                    >
+                      {actionLoading ? (
+                        <div className="flex items-center space-x-1">
+                          <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></div>
+                          <span>Claiming...</span>
+                        </div>
+                      ) : claimStatus.available ? (
+                        "🎁 Claim Yield"
+                      ) : (
+                        "🔒 Locked"
+                      )}
+                    </Button>
+                    {!claimStatus.available && claimStatus.timeRemaining > 0 && (
+                      <span className="text-yellow-300 text-xs opacity-80">
+                        Unlocks in {formatTimeRemaining(claimStatus.timeRemaining)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {claimStatus.available && (
+                  <div className="text-xs text-green-400/80 bg-green-400/5 rounded px-2 py-1 mt-2">
+                    💡 Your yield tokens are ready to claim! These represent your share of the pool's generated yield.
+                  </div>
+                )}
+                {!claimStatus.available && (
+                  <div className="text-xs text-yellow-400/80 bg-yellow-400/5 rounded px-2 py-1 mt-2">
+                    ⏰ Yield tokens are locked for 1 hour after deposit to prevent flash loan attacks.
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Message si pas de dépôts - supprimé car maintenant cette section ne s'affiche que s'il y a des dépôts */}
+          </div>
+        )}
 
         {/* Interface d'action */}
         {userConnected && pool.isActive && (
@@ -317,14 +439,21 @@ export function LendingPoolCard({
                 </span>
               </div>
 
+              {/* Message d'information sur le montant minimum */}
+              {mode === "deposit" && (
+                <div className="text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded px-2 py-1">
+                  Minimum deposit: 1 {pool.token.symbol}
+                </div>
+              )}
+
               <div className="relative">
                 <Input
                   type="number"
-                  placeholder={`0.0 ${pool.token.symbol}`}
+                  placeholder={`${mode === "deposit" ? "1.0" : "0.0"} ${pool.token.symbol}`}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   max={maxAmount}
-                  min={0}
+                  min={mode === "deposit" ? 1 : 0}
                   step={0.000001}
                   className="bg-white/5 border-white/20 text-white placeholder:text-white/40 pr-16 h-12"
                 />
@@ -344,6 +473,7 @@ export function LendingPoolCard({
                   !amount ||
                   parseFloat(amount) <= 0 ||
                   parseFloat(amount) > maxAmount ||
+                  (mode === "deposit" && parseFloat(amount) < 1) || // Montant minimum pour deposit
                   actionLoading
                 }
                 className="w-full h-12 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
@@ -362,43 +492,6 @@ export function LendingPoolCard({
             </div>
           </div>
         )}
-
-        {/* User Position Info */}
-        {userConnected &&
-          (pool.userDeposit !== undefined || userBalances?.YT > 0) && (
-            <div className="bg-white/5 rounded-lg p-4 space-y-3 border border-white/10">
-              <h4 className="text-white font-medium text-sm">Your Position</h4>
-
-              {pool.userDeposit !== undefined && pool.userDeposit > 0 && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-white/60">Deposited:</span>
-                    <span className="text-green-400 font-medium">
-                      {pool.userDeposit.toFixed(6)} {pool.token.symbol}
-                    </span>
-                  </div>
-                  {pool.userYieldEarned !== undefined &&
-                    pool.userYieldEarned > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-white/60">Yield Earned:</span>
-                        <span className="text-yellow-400 font-medium">
-                          {pool.userYieldEarned.toFixed(6)} {pool.token.symbol}
-                        </span>
-                      </div>
-                    )}
-                </div>
-              )}
-
-              {userBalances?.YT > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-white/60">YT Tokens:</span>
-                  <span className="text-blue-400 font-medium">
-                    {userBalances.YT.toFixed(6)} YT
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
 
         {/* Connect wallet CTA */}
         {!userConnected && (
@@ -435,11 +528,22 @@ export function LendingPoolCard({
           </summary>
           <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-white/60">Total Deposits</span>
+              <span className="text-white/60">Total Pool Deposits</span>
               <span className="text-white/80">
                 {formatNumber(pool.totalDeposits)} {pool.token.symbol}
               </span>
             </div>
+            {userConnected && pool.userDeposit !== undefined && pool.userDeposit > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-white/60">Your Share</span>
+                <span className="text-blue-300 font-medium">
+                  {pool.totalDeposits > 0 
+                    ? `${((pool.userDeposit / pool.totalDeposits) * 100).toFixed(2)}%`
+                    : "0%"
+                  } of pool
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-white/60">Yield Distributed</span>
               <span className="text-green-400 font-medium">

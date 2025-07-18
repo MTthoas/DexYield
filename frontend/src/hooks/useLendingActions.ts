@@ -104,14 +104,25 @@ export const useLendingActions = () => {
     }
 
     try {
+      console.log('🔍 Looking for strategy:', strategyAddress);
+      
       // Utiliser la méthode publique pour récupérer toutes les stratégies
       const allStrategies = await contractService.getAllStrategies();
+      console.log('🔍 Available strategies:', allStrategies.map((s: any) => ({
+        publicKey: s.publicKey.toString(),
+        account: s.account
+      })));
+      
       const strategy = allStrategies.find((s: any) => s.publicKey.toString() === strategyAddress);
       
       if (!strategy) {
+        console.error('❌ Strategy not found!');
+        console.error('Looking for:', strategyAddress);
+        console.error('Available strategies:', allStrategies.map((s: any) => s.publicKey.toString()));
         throw new Error('Strategy not found');
       }
 
+      console.log('✅ Found strategy:', strategy);
       return {
         strategy: strategy.account,
         ytMint: strategy.account.tokenYieldAddress || strategy.account.token_yield_address
@@ -208,8 +219,19 @@ export const useLendingActions = () => {
 
     } catch (err) {
       console.error('❌ Erreur lors du dépôt:', err);
-      setError(err instanceof Error ? err.message : 'Failed to deposit');
-      throw err;
+      
+      // Gestion d'erreurs spécifiques
+      let errorMessage = 'Failed to deposit';
+      if (err instanceof Error) {
+        if (err.message.includes('InsufficientDepositAmount')) {
+          errorMessage = 'Minimum deposit amount is 1 token. Please increase your deposit amount.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
